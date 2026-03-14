@@ -1,5 +1,7 @@
 # Environment variables
 .env
+backend/data/raw_data/
+venv/
 
 # Data / Datasets
 backend/data/raw_data/
