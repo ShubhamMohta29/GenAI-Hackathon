@@ -80,10 +80,12 @@ GenAI-Hackathon/
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 18+
-- [Neo4j Desktop](https://neo4j.com/download/) with a running local database
-- [Kaggle API token](https://www.kaggle.com/docs/api) (`~/.kaggle/kaggle.json`)
+Before running anything, install the following:
+
+- [Python 3.10+](https://python.org)
+- [Node.js 18+](https://nodejs.org)
+- [Neo4j Desktop](https://neo4j.com/download/) — create a local database and start it
+- [Kaggle API token](https://www.kaggle.com/docs/api) — place `kaggle.json` at `~/.kaggle/kaggle.json`
 
 ---
 
@@ -96,25 +98,9 @@ cd GenAI-Hackathon
 
 ---
 
-### 2. Set up Python environment
+### 2. Configure environment variables
 
-```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Mac/Linux
-source venv/bin/activate
-
-pip install -r backend/requirements.txt
-```
-
----
-
-### 3. Configure environment variables
-
-Create a `.env` file in the `backend/` folder:
+Create a `backend/.env` file with your Neo4j credentials:
 
 ```
 NEO4J_URI=bolt://localhost:7687
@@ -124,50 +110,54 @@ NEO4J_PASSWORD=your_password_here
 
 ---
 
-### 4. Train the model
+### 3. Run setup (installs all dependencies)
 
-This downloads the PaySim dataset from Kaggle, builds the graph, trains the GNN, and exports `scores.json`.
-
+**Windows:**
 ```bash
-cd backend/model
-python train.py
+setup.bat
 ```
 
-Training uses 100,000 rows by default for speed. Remove `sample_size=100000` in `train.py` to train on the full 6M-row dataset.
+**Mac/Linux:**
+```bash
+chmod +x setup.sh run.sh
+bash setup.sh
+```
+
+This will automatically create a virtual environment and install all Python and Node dependencies.
 
 ---
 
-### 5. Load data into Neo4j
-
-Make sure your Neo4j database is running, then:
+### 4. Train the model & load Neo4j
 
 ```bash
-cd backend/data
+# Activate venv first
+# Windows:   venv\Scripts\activate
+# Mac/Linux: source venv/bin/activate
+
+cd backend/model
+python train.py
+
+cd ../data
 python load_neo4j.py
 ```
 
----
-
-### 6. Start the backend
-
-```bash
-cd backend/api
-uvicorn main:app --reload --port 8000
-```
-
-The API will be available at `http://localhost:8000`.
+Training uses 100,000 rows by default for speed. Remove `sample_size=100000` in `train.py` to use the full 6M-row dataset.
 
 ---
 
-### 7. Start the frontend
+### 5. Start the app
 
+**Windows:**
 ```bash
-cd frontend
-npm install
-npm run dev
+run.bat
 ```
 
-Open `http://localhost:5173` in your browser.
+**Mac/Linux:**
+```bash
+bash run.sh
+```
+
+This opens the backend and frontend in separate terminal windows automatically. Then open `http://localhost:5173` in your browser.
 
 ---
 
