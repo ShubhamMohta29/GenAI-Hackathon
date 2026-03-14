@@ -56,12 +56,13 @@ gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # ── Fraud Ring Detection (pre-computed) ──────────────────────────
 print("Detecting fraud rings...")
 G = nx.DiGraph()
-high_risk_ids = {a["account_id"] for a in HIGH_RISK}
 
-for _, row in DF.iterrows():
+# Build graph from transactions flagged as fraud in the dataset
+# OR where at least one endpoint is a high/medium-risk account
+fraud_tx = DF[DF["isFraud"] == 1]
+for _, row in fraud_tx.iterrows():
     src, dst = row["nameOrig"], row["nameDest"]
-    if src in high_risk_ids and dst in high_risk_ids:
-        G.add_edge(src, dst, amount=row["amount"])
+    G.add_edge(src, dst, amount=row["amount"], tx_type=row["type"])
 
 # Find connected components (treat as undirected for ring detection)
 RINGS = []
