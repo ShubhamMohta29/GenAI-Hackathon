@@ -22,3 +22,4 @@ backend/model/fraud_gnn.pt
 backend/model/scores.json
 *.pt
 *.csv
+*.log
