@@ -9,7 +9,9 @@ export default function App() {
   const [alerts, setAlerts] = useState([])
   const [feed, setFeed] = useState([])
   const [stats, setStats] = useState({ total: 0, flagged: 0, highRisk: 0 })
+  const [selectedNode, setSelectedNode] = useState(null)
   const [selectedTx, setSelectedTx] = useState(null)
+  const [nodeRiskFilter, setNodeRiskFilter] = useState("high")
   const [highlightNodes, setHighlightNodes] = useState(new Set())
   const [activePanel, setActivePanel] = useState(null) // "flagged" | "highRisk" | null
   const wsRef = useRef(null)
@@ -48,6 +50,23 @@ export default function App() {
 
     return () => wsRef.current?.close()
   }, [])
+  const handleNodeClick = useCallback((node) => {
+    setSelectedNode(node)
+    setActivePanel(null)
+    const relatedLinks = graphData.links.filter(
+      l => (l.source.id ?? l.source) === node.id || (l.target.id ?? l.target) === node.id
+    )
+    const relatedNodeIds = new Set([node.id])
+    relatedLinks.forEach(l => {
+      relatedNodeIds.add(l.source.id ?? l.source)
+      relatedNodeIds.add(l.target.id ?? l.target)
+    })
+    setHighlightNodes(relatedNodeIds)
+    if (graphRef.current && node.x !== undefined) {
+      graphRef.current.centerAt(node.x, node.y, 800)
+      graphRef.current.zoom(6, 800)
+    }
+  }, [graphData.links])
 
   const zoomToNode = useCallback((nodeId) => {
     setHighlightNodes(new Set([nodeId]))
@@ -226,6 +245,80 @@ export default function App() {
           </div>
         )}
 
+        {selectedNode && (
+          <div style={{
+            position: "absolute", top: 70, left: 16, zIndex: 20,
+            background: "#0f172aee", border: "1px solid #eab308",
+            borderRadius: 10, padding: "14px 16px", width: 300, maxHeight: 420,
+            backdropFilter: "blur(8px)", boxShadow: "0 0 24px #eab30822",
+            display: "flex", flexDirection: "column"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div>
+                <div style={{ color: "#eab308", fontSize: 11, letterSpacing: 1 }}>◈ ACCOUNT #{selectedNode.id}</div>
+                <div style={{ fontSize: 10, marginTop: 2, color: selectedNode.risk_score > 0.7 ? "#ef4444" : "#eab308" }}>
+                  Risk: {(selectedNode.risk_score * 100).toFixed(0)}%
+                </div>
+              </div>
+              <button onClick={() => { setSelectedNode(null); setHighlightNodes(new Set()); graphRef.current?.zoomToFit(600, 40) }}
+                style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16 }}>✕</button>
+            </div>
+
+            <div style={{ display: "flex", gap: 5, marginBottom: 10 }}>
+              {[
+                { label: "🔴 High",   key: "high",   color: "#ef4444" },
+                { label: "🟡 Medium", key: "medium", color: "#eab308" },
+              ].map(f => (
+                <button key={f.key} onClick={() => setNodeRiskFilter(f.key)} style={{
+                  flex: 1, padding: "5px 0", fontSize: 10, cursor: "pointer",
+                  borderRadius: 4, fontWeight: 600,
+                  background: nodeRiskFilter === f.key ? `${f.color}33` : "#1e293b",
+                  border: `1px solid ${nodeRiskFilter === f.key ? f.color : "#334155"}`,
+                  color: nodeRiskFilter === f.key ? f.color : "#64748b",
+                  transition: "all 0.15s"
+                }}>{f.label}</button>
+              ))}
+            </div>
+
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {(() => {
+                const list = graphData.links
+                  .filter(l =>
+                    (l.source.id ?? l.source) === selectedNode.id ||
+                    (l.target.id ?? l.target) === selectedNode.id
+                  )
+                  .map(l => {
+                    const isOut = (l.source.id ?? l.source) === selectedNode.id
+                    const otherId = isOut ? (l.target.id ?? l.target) : (l.source.id ?? l.source)
+                    const other = graphData.nodes.find(n => n.id === otherId) ?? {}
+                    return { id: otherId, direction: isOut ? "OUT TO" : "IN FROM", amount: l.amount, is_fraud: l.is_fraud, risk_score: other.risk_score ?? 0 }
+                  })
+                  .filter(a => nodeRiskFilter === "high" ? a.risk_score > 0.7 : a.risk_score > 0.3 && a.risk_score <= 0.7)
+
+                if (list.length === 0)
+                  return <div style={{ color: "#475569", fontSize: 11, textAlign: "center", marginTop: 16 }}>No accounts in this risk range</div>
+
+                return list.map((a, idx) => {
+                  const rc = a.risk_score > 0.7 ? "#ef4444" : "#eab308"
+                  return (
+                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 8px", background: "#1e293b55", borderRadius: 4, marginBottom: 4 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{ color: a.direction === "OUT TO" ? "#38bdf8" : "#f43f5e", fontSize: 10, fontWeight: "bold" }}>{a.direction}</span>
+                        <span style={{ color: "#cbd5e1", fontSize: 11 }}>#{a.id}</span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                        <span style={{ color: "#f1f5f9", fontSize: 11 }}>${a.amount?.toLocaleString()}</span>
+                        <span style={{ color: rc, fontSize: 9, fontWeight: "bold" }}>{(a.risk_score * 100).toFixed(0)}% risk</span>
+                        {a.is_fraud && <span style={{ color: "#ef4444", fontSize: 9 }}>⚠ FRAUD</span>}
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+          </div>
+        )}
+
         {/* Transaction detail overlay */}
         {selectedTx && (
           <div style={{
@@ -267,6 +360,14 @@ export default function App() {
                   color: selectedTx.flagged ? "#fca5a5" : "#86efac",
                   border: `1px solid ${selectedTx.flagged ? "#ef444444" : "#22c55e44"}`
                 }}>
+                  onNodeClick={handleNodeClick}
+                  linkDirectionalArrowLength={l => {
+                    const srcId = typeof l.source === "object" ? l.source.id : l.source
+                    const dstId = typeof l.target === "object" ? l.target.id : l.target
+                    if (highlightNodes.size > 0 && highlightNodes.has(srcId) && highlightNodes.has(dstId)) return 4
+                    return 2
+                  }}
+                  linkDirectionalArrowRelPos={1}
                   {selectedTx.flagged ? "⚠ FLAGGED FOR FRAUD" : "✓ CLEAR"}
                 </div>
               </div>
@@ -284,6 +385,14 @@ export default function App() {
           linkWidth={linkWidth}
           backgroundColor="#0f172a"
           nodeLabel={n => `${n.id} | risk: ${(n.risk_score * 100).toFixed(0)}%`}
+          onNodeClick={handleNodeClick}
+          linkDirectionalArrowLength={l => {
+            const srcId = typeof l.source === "object" ? l.source.id : l.source
+            const dstId = typeof l.target === "object" ? l.target.id : l.target
+            if (highlightNodes.size > 0 && highlightNodes.has(srcId) && highlightNodes.has(dstId)) return 4
+            return 2
+          }}
+          linkDirectionalArrowRelPos={1}
         />
       </div>
 

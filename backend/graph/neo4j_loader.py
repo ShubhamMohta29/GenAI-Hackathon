@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "data"))
 from generate_data import get_kaggle_dataset, DATASET, DATA_DIR
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "data", ".env"))
 
 driver = GraphDatabase.driver(
     os.getenv("NEO4J_URI"),
