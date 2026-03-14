@@ -2,7 +2,7 @@
 .env
 
 # Data / Datasets
-backend/data/raw_dataset/
+backend/data/raw_data/
 *.csv
 *.zip
 
