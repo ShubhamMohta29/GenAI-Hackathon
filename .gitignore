@@ -1,2 +1,18 @@
+# Environment variables
 .env
+
+# Data / Datasets
 backend/data/raw_data/
+*.csv
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Mac OS
+.DS_Store
