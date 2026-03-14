@@ -2,6 +2,7 @@ import json
 import os
 import asyncio
 import random
+from datetime import datetime, timedelta
 
 import pandas as pd
 import networkx as nx
@@ -34,8 +35,16 @@ with open(SCORES_PATH) as f:
 # Load the PaySim transactions into Pandas (sampling for speed on Mac)
 # We load a reasonable subset for the API to serve graph data quickly
 print("Loading PaySim CSV for API...")
-DF = pd.read_csv(CSV_PATH, nrows=500_000)
+DF = pd.read_csv(CSV_PATH)
 print(f"Loaded {len(DF):,} transactions for API graph serving.")
+
+# ── Timestamp helper ─────────────────────────────────────────────
+SIM_START = datetime(2024, 1, 1)  # Simulated start date
+
+def step_to_timestamp(step: int) -> str:
+    """Convert PaySim step (hour number) to a readable date string."""
+    dt = SIM_START + timedelta(hours=int(step))
+    return dt.strftime("%b %d, %Y — %H:%M")
 
 # ── Pre-compute risk tiers ───────────────────────────────────────
 HIGH_RISK = sorted(
@@ -114,6 +123,8 @@ def get_graph():
             "dst": row["nameDest"],
             "amount": row["amount"],
             "is_fraud": bool(row["isFraud"]),
+            "timestamp": step_to_timestamp(row["step"]),
+            "tx_type": row["type"],
         }
         for _, row in DF.iterrows()
         if row["nameOrig"] in node_ids and row["nameDest"] in node_ids
@@ -188,8 +199,8 @@ async def get_account_profile(account_id: str):
 
     # Top 5 largest transactions
     all_tx = pd.concat([
-        sent[["nameDest", "amount", "type", "isFraud"]].rename(columns={"nameDest": "counterparty"}).assign(direction="SENT"),
-        received[["nameOrig", "amount", "type", "isFraud"]].rename(columns={"nameOrig": "counterparty"}).assign(direction="RECEIVED"),
+        sent[["nameDest", "amount", "type", "isFraud", "step"]].rename(columns={"nameDest": "counterparty"}).assign(direction="SENT"),
+        received[["nameOrig", "amount", "type", "isFraud", "step"]].rename(columns={"nameOrig": "counterparty"}).assign(direction="RECEIVED"),
     ])
     if len(all_tx) > 0:
         top5 = all_tx.nlargest(5, "amount")
@@ -198,7 +209,7 @@ async def get_account_profile(account_id: str):
         for _, tx in top5.iterrows():
             flag = " ⚠ FRAUD" if tx["isFraud"] else ""
             summary_lines.append(
-                f"  {tx['direction']} ${tx['amount']:,.2f} ({tx['type']}) → {tx['counterparty']}{flag}"
+                f"  [{step_to_timestamp(tx['step'])}] {tx['direction']} ${tx['amount']:,.2f} ({tx['type']}) → {tx['counterparty']}{flag}"
             )
 
     transaction_summary = "\n".join(summary_lines)
@@ -221,7 +232,7 @@ RED FLAGS:
 • [flag 3]
 (max 5 flags)
 
-TRANSACTION PATTERN: [2-3 sentences describing the money flow]
+TRANSACTION PATTERN: [2-3 sentences describing the money flow. **You MUST mention the exact dates/times or time elapsed between these transactions.**]. Decide accuracy (exact minute,hour or day dependingon relevancy)
 
 CONNECTED ENTITIES: [List key counterparty account IDs and their role]
 
@@ -264,6 +275,7 @@ async def websocket_live(ws: WebSocket):
                 "src": row["nameOrig"],
                 "dst": row["nameDest"],
                 "amount": round(float(row["amount"]), 2),
+                "timestamp": step_to_timestamp(row["step"]),
                 "risk_score": dst_score,
                 "flagged": dst_score > 0.7,
             }
