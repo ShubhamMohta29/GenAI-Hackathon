@@ -1,6 +1,5 @@
 # Environment variables
 .env
-backend/data/raw_data/
 venv/
 
 # Data / Datasets
@@ -18,3 +17,8 @@ env/
 
 # Mac OS
 .DS_Store
+
+backend/model/fraud_gnn.pt
+backend/model/scores.json
+*.pt
+*.csv
