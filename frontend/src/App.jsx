@@ -55,13 +55,13 @@ export default function App() {
 
   return (
     <div style={{
-      display: "flex", height: "100vh",
+      display: "flex", height: "100vh", width: "100vw",
       background: "#0f172a", color: "#f1f5f9",
       fontFamily: "monospace", overflow: "hidden"
     }}>
 
       {/* LEFT — graph canvas */}
-      <div style={{ flex: 1, position: "relative" }}>
+      <div style={{ flex: 1, position: "relative", height: "100vh", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{
@@ -99,10 +99,12 @@ export default function App() {
 
       {/* RIGHT — sidebar */}
       <div style={{
-        width: 300,
+        width: 320,
+        height: "100vh",
         borderLeft: "1px solid #1e293b",
         display: "flex", flexDirection: "column",
-        overflow: "hidden"
+        overflow: "hidden",
+        flexShrink: 0
       }}>
 
         {/* Stats row */}
@@ -169,7 +171,7 @@ export default function App() {
 
         {/* Live feed */}
         <div style={{
-          padding: 16, overflowY: "auto", flex: 1
+          padding: 16, overflowY: "auto", flex: 1, minHeight: 0
         }}>
           <div style={{
             fontSize: 10, color: "#94a3b8",
