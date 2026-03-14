@@ -9,7 +9,7 @@ from dataset import build_pyg_graph, DATA_DIR
 from gnn import FraudGNN
 
 # Build graph — uses 100k rows for speed, remove sample_size for full dataset
-data = build_pyg_graph(sample_size=100000)
+data, node_mapping, all_nodes = build_pyg_graph(sample_size=100000)
 
 n = data.num_nodes
 
