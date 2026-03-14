@@ -1,127 +1,219 @@
-## GenAI Hackathon Project
+# ◈ Fraud Graph Monitor
 
-This repository contains a full-stack GenAI application with a **React + Vite frontend** and a **Python backend** for model serving, retrieval, and data/graph processing.
+A real-time financial fraud detection system built with a Graph Neural Network (GNN) and an interactive graph visualization dashboard.
 
-- **Frontend**: `frontend/` (React + Vite SPA)
-- **Backend**: `backend/` (Python API + GenAI logic)
-- **Environment**: configuration via `.env` / `.env.example`
-- **Orchestration**: optional `docker-compose.yml` to run services together
+Transactions are modelled as a directed graph — accounts are nodes, payments are edges — and a GraphSAGE neural network assigns each account a fraud risk score by learning from the structure of who sends money to whom.
 
-### Key Features
+---
 
-- **GenAI-powered backend**: Python service that can host LLM calls, vector search, and graph-based reasoning.
-- **Modern React frontend**: Vite-powered dev server for fast iteration during the hackathon.
-- **Configurable via env**: secrets and endpoints are managed via `.env`.
-- **Optional containers**: run everything locally or via Docker Compose.
+## Demo
 
-### Tech Stack
+- 🔴 **Red nodes** = high fraud risk (>80%)
+- 🟠 **Orange nodes** = elevated risk (>50%)
+- 🟡 **Yellow nodes** = moderate risk (>30%)
+- 🟢 **Green nodes** = low risk
+- Click **Flagged** or **High Risk** cards to highlight all matching accounts in the graph
+- Click any live transaction to zoom to the involved nodes
+- Click any fraud alert to locate that account in the graph
 
-- **Frontend**: React, Vite, TypeScript/JavaScript, modern tooling via `npm`.
-- **Backend**: Python 3.10+, typical stack (FastAPI/Flask-style API + data/graph utilities).
-- **Infra / Tooling**: Docker, Docker Compose (optional), `.env`-based configuration.
+---
+
+## Architecture
+
+```
+PaySim Dataset (Kaggle)
+        ↓
+  Data Pipeline          → builds PyTorch Geometric graph
+        ↓
+  GNN Training           → GraphSAGE (3-layer), outputs per-node risk scores
+        ↓
+  Neo4j Graph DB         → stores accounts + transactions
+        ↓
+  FastAPI Backend        → /graph, /alerts, /ws/live (WebSocket)
+        ↓
+  React Frontend         → force-directed graph + live feed dashboard
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| ML Model | PyTorch Geometric (GraphSAGE) |
+| Dataset | PaySim (Kaggle `ealaxi/paysim1`) |
+| Graph DB | Neo4j |
+| Backend | FastAPI + Uvicorn |
+| Frontend | React + Vite + react-force-graph-2d |
+
+---
+
+## Project Structure
+
+```
+GenAI-Hackathon/
+├── backend/
+│   ├── api/
+│   │   └── main.py           # FastAPI app (graph, alerts, WebSocket)
+│   ├── data/
+│   │   ├── generate_data.py  # Kaggle dataset downloader
+│   │   ├── dataset.py        # PyG graph builder
+│   │   └── load_neo4j.py     # Neo4j loader
+│   ├── model/
+│   │   ├── gnn.py            # FraudGNN model definition
+│   │   ├── train.py          # Training script
+│   │   ├── fraud_gnn.pt      # Trained model weights (generated)
+│   │   └── scores.json       # Per-account risk scores (generated)
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx           # Main dashboard component
+│   │   ├── main.jsx          # React entry point
+│   │   └── index.css
+│   └── package.json
+└── .env                      # Neo4j credentials (not committed)
+```
+
+---
+
+## Setup & Installation
 
 ### Prerequisites
 
-- Node.js (LTS recommended)
-- Python 3.10+ (or the version you use for the hackathon)
-- `pip` / `venv` (or another Python environment manager)
-- Docker & Docker Compose (optional, if you want to use containers)
+- Python 3.10+
+- Node.js 18+
+- [Neo4j Desktop](https://neo4j.com/download/) with a running local database
+- [Kaggle API token](https://www.kaggle.com/docs/api) (`~/.kaggle/kaggle.json`)
 
-### Backend Setup & Run
+---
 
-1. **Create and activate a virtual environment**:
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-```
-
-2. **Install dependencies**:
+### 1. Clone the repo
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/YOUR_USERNAME/GenAI-Hackathon.git
+cd GenAI-Hackathon
 ```
 
-3. **Set up environment variables**:
+---
 
-- Copy `.env.example` from the repo root to `.env` (and adjust values), or
-- Provide the required variables directly in your environment.
-
-4. **Run the backend API** (example, adjust to your actual entrypoint/command):
+### 2. Set up Python environment
 
 ```bash
-cd backend
-python -m api.main
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# Mac/Linux
+source venv/bin/activate
+
+pip install -r backend/requirements.txt
 ```
 
-If you are using a framework like FastAPI or Flask, adapt the run command accordingly (for example):
+---
+
+### 3. Configure environment variables
+
+Create a `.env` file in the `backend/` folder:
+
+```
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password_here
+```
+
+---
+
+### 4. Train the model
+
+This downloads the PaySim dataset from Kaggle, builds the graph, trains the GNN, and exports `scores.json`.
 
 ```bash
-uvicorn backend.api.main:app --reload
+cd backend/model
+python train.py
 ```
 
-### Frontend Setup & Run
+Training uses 100,000 rows by default for speed. Remove `sample_size=100000` in `train.py` to train on the full 6M-row dataset.
 
-1. **Install dependencies**:
+---
+
+### 5. Load data into Neo4j
+
+Make sure your Neo4j database is running, then:
+
+```bash
+cd backend/data
+python load_neo4j.py
+```
+
+---
+
+### 6. Start the backend
+
+```bash
+cd backend/api
+uvicorn main:app --reload --port 8000
+```
+
+The API will be available at `http://localhost:8000`.
+
+---
+
+### 7. Start the frontend
 
 ```bash
 cd frontend
 npm install
-```
-
-2. **Run the dev server**:
-
-```bash
 npm run dev
 ```
 
-3. **Open the app**:
+Open `http://localhost:5173` in your browser.
 
-Open the printed local URL (usually `http://localhost:5173`) in your browser.
+---
 
-### Using Docker Compose (Optional)
+## How the Model Works
 
-If `docker-compose.yml` is configured for your services, you can bring everything up with:
+The dataset (PaySim) simulates mobile money transactions with labelled fraud cases. Fraud is heavily concentrated in `TRANSFER` and `CASH_OUT` transaction types.
 
-```bash
-docker compose up --build
+**Node features (per account):**
+- Number of transactions sent
+- Total amount sent
+- Number of transactions received
+- Total amount received
+
+**Edge features (per transaction):**
+- Amount
+- Old/new balances (origin and destination)
+- Transaction type (one-hot encoded)
+
+**Model:** 3-layer GraphSAGE with dropout, trained with weighted cross-entropy loss to handle class imbalance (fraud accounts are ~0.3% of the dataset).
+
+**Output:** A risk score (0–1) per account, saved to `scores.json` and served by the API.
+
+---
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/graph` | GET | All account nodes and transaction edges |
+| `/alerts` | GET | Top 20 highest risk accounts |
+| `/ws/live` | WebSocket | Streams simulated live transactions every 2s |
+
+---
+
+## .gitignore
+
+Make sure these are excluded from your repo:
+
 ```
-
-Then open the frontend URL shown in the logs. Check the compose file for exposed ports and service names.
-
-### Data & Graph Utilities
-
-The `backend/data/` and `backend/graph/` directories contain helper scripts for dataset generation and graph loading:
-
-- `backend/data/generate_data.py` – dataset generation utilities.
-- `backend/data/graph_builder.py` – graph construction helpers.
-- `backend/graph/neo4j_loader.py` – example Neo4j graph loading utilities.
-
-Adjust and run these as needed for your specific GenAI use case (for example, building knowledge graphs or augmenting LLM responses).
-
-### Project Structure (High Level)
-
-```text
-GenAI-Hackathon/
-├─ frontend/          # React + Vite app (UI)
-├─ backend/           # Python backend (API, models, data utilities)
-├─ docker-compose.yml # Optional container orchestration
-├─ .env.example       # Example environment configuration
-└─ README.md          # This file
+venv/
+__pycache__/
+*.pt
+*.csv
+raw_data/
+.env
+.DS_Store
+node_modules/
+dist/
 ```
-
-### Development Workflow
-
-- **Iterate quickly**: run backend and frontend locally, point the frontend to the local API URL in `.env`.
-- **Use feature branches**: create a branch per feature or experiment.
-- **Keep commits focused**: small, descriptive commits help during the hackathon crunch.
-
-### Contributing / Hacking on This Repo
-
-- **Branching**: create a feature branch for your change.
-- **Coding style**: follow existing patterns in `frontend/` and `backend/`.
-- **Commits**: keep them small and focused with descriptive messages.
-
-Feel free to adapt this README as the project evolves during the hackathon.
-
