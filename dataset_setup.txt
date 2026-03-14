@@ -1,0 +1,25 @@
+IMPORTANT!!!!!!
+
+-To run the dataset setup, you need to have the kaggle API token in your home directory. 
+You can get it from https://www.kaggle.com/<yourusername>
+
+-Once you download the json file, you must place it in a new directory in your mac, NOT
+in the git repository
+
+-The directory should be called .kaggle and the file should be called kaggle.json
+
+-Just run the following commands in your mac's terminal:
+
+mkdir -p ~/.kaggle
+mv ~/Downloads/kaggle.json ~/.kaggle/kaggle.json
+chmod 600 ~/.kaggle/kaggle.json
+
+-Note that it looks for the kaggle.json file in your downloads folder so just make sure its there
+
+-Once you have the json file in the right directory, run the generate_data.py script as such:
+python3 backend/data/generate_data.py
+
+-You will see the first 5 lines of the table and other information.
+
+-Now, the dataset is stored in a variable 'data' that you can use with the pandas library
+
