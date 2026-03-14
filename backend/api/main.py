@@ -252,19 +252,19 @@ If the account is clean (low risk, no flags), state: "No suspicious activity det
 
 @app.websocket("/ws/live")
 async def websocket_live(ws: WebSocket):
-    """Simulate a live transaction feed using real PaySim data + risk scores."""
+    """Simulate a live transaction feed using REAL PaySim rows + GNN risk scores."""
     await ws.accept()
-    account_ids = list(SCORES.keys())
     try:
         while True:
-            src, dst = random.sample(account_ids, 2)
+            row = DF.sample(1).iloc[0]
+            dst_score = SCORES.get(row["nameDest"], 0.0)
             event = {
-                "type": "transaction",
-                "src": src,
-                "dst": dst,
-                "amount": round(random.uniform(50, 9999), 2),
-                "risk_score": SCORES.get(dst, 0.0),
-                "flagged": SCORES.get(dst, 0.0) > 0.7,
+                "type": row["type"],
+                "src": row["nameOrig"],
+                "dst": row["nameDest"],
+                "amount": round(float(row["amount"]), 2),
+                "risk_score": dst_score,
+                "flagged": dst_score > 0.7,
             }
             await ws.send_json(event)
             await asyncio.sleep(2)
