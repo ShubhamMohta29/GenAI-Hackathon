@@ -224,31 +224,31 @@ async def get_account_profile(account_id: str):
     transaction_summary = "\n".join(summary_lines)
 
     # Send to Gemini for analysis
-    prompt = f"""You are a fraud analyst at TD Bank. Generate a concise Suspicious Activity Report (SAR) 
-for the following account flagged by our GNN fraud detection system.
+    prompt = f"""You are a Senior Financial Crimes Investigator at TD Bank. Generate a professional Suspicious Activity Report (SAR) Narrative 
+for the following account flagged by our GNN-based Transaction Monitoring System.
 
 {transaction_summary}
 
-Respond in EXACTLY this format (keep each section SHORT — 1-2 lines max, bullets max 8 words each):
+Respond in EXACTLY this format:
 
-TYPOLOGY: [One of: Money Mule | Layering | Smurfing | Shell Account | Bust-Out | Clean]
-SEVERITY: [CRITICAL / HIGH / MEDIUM / LOW]
-SUMMARY: [One sentence, max 20 words, explaining the core suspicion]
+EXECUTIVE DISPOSITION: [Immediate verdict: CRITICAL / HIGH / MEDIUM / LOW Risk]
+TYPOLOGY: [Specific AML Category: e.g. Rapid Movement of Funds, Aggregate Layering, Likely Money Mule, Cuckoo Smurfing, or Clean]
 
-RED FLAGS:
-• [flag 1]
-• [flag 2]
-• [flag 3]
-(max 5 flags)
+NARRATIVE ANALYSIS:
+[A 2-3 sentence technical narrative explaining the 'Why'. Focus on transaction velocity, round-dollar amounts, or unusual counterparty diversity. Be objective and cite specific data points from the provided summary.]
 
-TRANSACTION PATTERN: [2-3 sentences describing the money flow. **You MUST mention the exact dates/times or time elapsed between these transactions.**]. Decide accuracy (exact minute,hour or day dependingon relevancy)
+REGULATORY RED FLAGS:
+• [Primary red flag citing FinCEN/Regulatory tip-offs]
+• [Secondary behavioral anomaly]
+• [Structural anomaly]
+(max 4 bullets)
 
-CONNECTED ENTITIES: [List key counterparty account IDs and their role]
+TEMPORAL PATTERN: [Describe the timing. **Mention exact timestamps or intervals.** Is this a sudden burst of activity or a slow layering process?]
 
-RECOMMENDED ACTION: [One specific next step]
+RECOMMENDED DISPOSITION: [One authoritative next step: e.g. "Immediate hard-block on account", "Enhanced Due Diligence (EDD) required", "No further action (NFA) required"]
 
-Be specific — cite dollar amounts and account IDs from the data. No filler text.
-If the account is clean (low risk, no flags), state: "No suspicious activity detected." and stop."""
+Maintain an objective, forensic tone. Avoid emotional language. Cite exact account IDs and dollar amounts.
+If the risk is LOW and no anomalies are found, state: "DISPOSITION: No suspicious activity detected." and stop."""
 
     try:
         response = gemini_client.models.generate_content(
@@ -301,28 +301,31 @@ async def get_ring_profile(ring_id: str):
         
     transaction_summary = "\n".join(summary_lines)
 
-    prompt = f"""You are a risk analyst at TD Bank. Generate a concise Suspicious Activity Report (SAR) 
-for the following cluster of accounts flagged by our system for potential coordinated activity.
+    prompt = f"""You are a specialized Financial Intelligence Analyst at TD Bank. Generate a high-level Suspicious Activity Report (SAR) 
+for the following CLUSTER of accounts flagged for potential coordinated activity (ring-level behavior).
 
 {transaction_summary}
 
-Respond in EXACTLY this format (keep each section SHORT — 1-2 lines max, bullets max 8 words each):
+Respond in EXACTLY this format:
 
-TYPOLOGY: [One of: Coordinated Smurfing | Aggregator Network | Layering Network | Unclear]
-SEVERITY: [CRITICAL / HIGH / MEDIUM / LOW / REVIEW]
-SUMMARY: [One sentence explaining the nature of the network]
+CLUSTER IDENTIFICATION: [Ring ID]
+NETWORK TYPOLOGY: [e.g. Multi-Entity Smurfing Ring, Layering Proxy Network, or Interconnected Cash-Out Scheme]
+AGGREGATE RISK: [CRITICAL / HIGH / MEDIUM / REVIEW]
 
-OBSERVATIONS:
-• [observation 1]
-• [observation 2]
-• [observation 3]
+INVESTIGATIVE NARRATIVE:
+[A 3-4 sentence forensic summary of the network's behavior. Explain the interaction between subjects. Focus on the 'Flow of Funds'—where it originates and where it exits.]
+
+CRITICAL OBSERVED ANOMALIES:
+• [observation 1 citing specific account IDs]
+• [observation 2 citing dollar volume]
+• [observation 3 citing temporal coordination]
 (max 5 bullets)
 
-STRUCTURAL PATTERN: [2-3 sentences describing how they are sending money to each other. You MUST explicitly reference timestamps or time elapsed.]
+STRUCTURAL COORDINATION: [2-3 sentences describing how they are sending money to each other. You MUST explicitly reference timestamps or time elapsed to prove coordination.]
 
-RECOMMENDED ACTION: [One specific next step, e.g., freeze all accounts, request KYC, monitor]
+PROPOSED REMEDIATION: [Specific legal or operational next step: e.g. "Escalate to Law Enforcement Liaison", "Full network freeze", "Suspension of high-risk nodes"]
 
-Be specific, cite dollar amounts and account IDs. Use objective, non-deterministic language (e.g. "potential coordinated movement", "cluster", "displays characteristics of", rather than definitively labeling them as "fraudsters" or "criminals")."""
+Maintain professional, forensic, and objective terminology. Cite amounts and IDs."""
 
     try:
         response = gemini_client.models.generate_content(
