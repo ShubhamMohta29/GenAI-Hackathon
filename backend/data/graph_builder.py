@@ -24,7 +24,7 @@ def build_pyg_graph(sample_size=None):
     df = pd.read_csv(csv_path, nrows=sample_size)
     print(f"Loaded {len(df)} transactions.")
     
-    # --- 1. Map Strings to Integer Node IDs ---
+    # Map Strings to Integer Node IDs
     print("Extracting Node IDs...")
     unique_orig = df['nameOrig'].unique()
     unique_dest = df['nameDest'].unique()
@@ -39,14 +39,14 @@ def build_pyg_graph(sample_size=None):
     df['src_id'] = df['nameOrig'].map(node_mapping)
     df['dst_id'] = df['nameDest'].map(node_mapping)
 
-    # --- 2. Build Edge Index Tensor [2, num_edges] ---
+    # Build Edge Index Tensor
     print("Building Edge Index...")
     edge_index = torch.tensor(
         np.array([df['src_id'].values, df['dst_id'].values]),
         dtype=torch.long
     )
 
-    # --- 3. Build Node Features Tensor ---
+    # Build Node Features Tensor
     # Since PaySim doesn't give us demographics (age, location), we must ENGINEER them.
     print("Engineering Node Features...")
     # Feature 1: Default node features can just be dummy ones if nothing else exists, 
@@ -73,7 +73,7 @@ def build_pyg_graph(sample_size=None):
     x = scaler.fit_transform(x)
     x = torch.tensor(x, dtype=torch.float32)
 
-    # --- 4. Build Edge Features Tensor ---
+    # Build Edge Features Tensor
     print("Engineering Edge Features...")
     # One-hot encode the categorical 'type' column
     df = pd.get_dummies(df, columns=['type'], prefix='type', dtype=float)
@@ -97,11 +97,11 @@ def build_pyg_graph(sample_size=None):
     edge_attr = scaler.fit_transform(edge_attr)
     edge_attr = torch.tensor(edge_attr, dtype=torch.float32)
 
-    # --- 5. Build Labels ---
+    # Build Labels
     print("Extracting labels...")
     y = torch.tensor(df['isFraud'].values, dtype=torch.long)
 
-    # --- 6. Construct PyTorch Geometric Graph! ---
+    # Construct PyTorch Geometric Graph!
     print("Assembling PyTorch Data object...")
     graph_data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
     
