@@ -4,9 +4,9 @@
 
 ## Project Inspiration
 
-Financial fraud is one of the most damaging and fastest-growing problems facing banks and their customers. According to industry estimates, billions of dollars are lost annually to money laundering and fraudulent transactions — and traditional rule-based fraud detection systems are simply not fast enough or smart enough to keep up.
+Financial fraud is one of the most damaging and fastest-growing problems faced by banks and their customers. According to industry estimates, billions of dollars are lost annually to money laundering and fraudulent transactions — and traditional rule-based fraud detection systems are simply not fast enough or smart enough to keep up.
 
-We wanted to build something that a real fraud analyst at a bank like TD could actually use. The core insight driving Argus is that fraud is a graph problem — money launderers don't act alone. They operate in rings, layering transactions across multiple accounts to obscure the origin of funds. A rule-based system looking at individual transactions in isolation will always miss this. A graph neural network, by contrast, can see the entire network of relationships and flag accounts whose *connections* make them suspicious, even if any single transaction looks clean.
+We wanted to build something that a fraud analyst at a bank like TD could use to tackle this problem. The core insight driving Argus is that fraud is a graph problem — money launderers don't act alone. They operate in rings, layering transactions across multiple accounts to obscure the origin of funds. A rule-based system looking at individual transactions in isolation will always miss this. A graph neural network, by contrast, can see the entire network of relationships and flag accounts whose *connections* make them suspicious, even if any single transaction looks clean.
 
 We also recognized a second pain point: even when fraud is detected, analysts spend hours writing Suspicious Activity Reports (SARs) by hand — pulling transaction histories, identifying patterns, and writing structured reports for compliance. This is exactly the kind of synthesis task that generative AI excels at. By combining a trained GNN with Google Gemini, we can go from a flagged account ID to a complete, citation-backed SAR in seconds.
 
@@ -41,7 +41,7 @@ We also recognized a second pain point: even when fraud is detected, analysts sp
 - Native `WebSocket` API — live transaction feed
 
 ### Platforms
-- **Kaggle** — source of the PaySim financial transaction dataset (accessed via Kaggle API)
+- **Kaggle** — source of the PaySim financial transaction dataset (accessed via Kaggle API). Trained model leveraging Nvidia CUDA cloud hardware
 - **Google AI Studio** — Gemini API access
 
 ### Tools
