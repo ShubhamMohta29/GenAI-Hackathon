@@ -103,33 +103,40 @@ print(f"Found {len(RINGS)} suspicious clusters.")
 #  ENDPOINTS
 # ══════════════════════════════════════════════════════════════════
 
-@app.get("/graph")
-def get_graph():
-    """Return nodes + edges from the loaded CSV with risk scores attached."""
-    # Build unique nodes from transactions
-    all_ids = set(DF["nameOrig"].unique()) | set(DF["nameDest"].unique())
+@app.get("/graph/{account_id}")
+def get_account_graph(account_id: str):
+    """Return the 1-hop neighborhood graph for a single account."""
+    # Find all transactions where this account is sender or receiver
+    sent = DF[DF["nameOrig"] == account_id]
+    received = DF[DF["nameDest"] == account_id]
+    tx = pd.concat([sent, received])
+
+    if tx.empty:
+        return {"nodes": [{"id": account_id, "is_fraud": SCORES.get(account_id, 0.0) > 0.7, "risk_score": SCORES.get(account_id, 0.0)}], "edges": []}
+
+    # Collect all neighbor IDs
+    neighbor_ids = set(tx["nameOrig"].unique()) | set(tx["nameDest"].unique())
     nodes = [
         {
             "id": nid,
             "is_fraud": SCORES.get(nid, 0.0) > 0.7,
             "risk_score": SCORES.get(nid, 0.0),
         }
-        for nid in list(all_ids)[:2000]  # cap for frontend performance
+        for nid in neighbor_ids
     ]
 
-    # Build edges only between the included nodes
-    node_ids = {n["id"] for n in nodes}
+    # Cap edges at 200 for performance, prioritize largest
+    edge_df = tx.nlargest(200, "amount")
     edges = [
         {
-            "src": row["nameOrig"],
-            "dst": row["nameDest"],
-            "amount": row["amount"],
-            "is_fraud": bool(row["isFraud"]),
-            "timestamp": step_to_timestamp(row["step"]),
-            "tx_type": row["type"],
+            "src": r["nameOrig"],
+            "dst": r["nameDest"],
+            "amount": round(float(r["amount"]), 2),
+            "is_fraud": bool(r["isFraud"]),
+            "timestamp": step_to_timestamp(r["step"]),
+            "tx_type": r["type"],
         }
-        for _, row in DF.iterrows()
-        if row["nameOrig"] in node_ids and row["nameDest"] in node_ids
+        for _, r in edge_df.iterrows()
     ]
 
     return {"nodes": nodes, "edges": edges}
