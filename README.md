@@ -1,6 +1,7 @@
 # 🔍 ARGUS — AML Investigation Dashboard
 
 A real-time Anti-Money Laundering (AML) fraud investigation platform built with a Graph Neural Network (GNN) and Google Gemini AI. FraudLink scores 9 million accounts for fraud risk, detects suspicious transaction clusters, and generates AI-powered Suspicious Activity Reports (SARs) on demand.
+Sponsored Prize Category: TD
 
 ---
 
