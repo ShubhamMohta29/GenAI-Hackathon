@@ -62,8 +62,8 @@ print(f"Risk tiers → High: {len(HIGH_RISK):,}  Medium: {len(MEDIUM_RISK):,}  L
 # ── Gemini LLM Client ───────────────────────────────────────────
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# ── Fraud Ring Detection (pre-computed) ──────────────────────────
-print("Detecting fraud rings...")
+# ── Suspicious Cluster Detection (pre-computed) ──────────────────────────
+print("Detecting suspicious clusters...")
 G = nx.DiGraph()
 
 # Build graph from transactions flagged as fraud in the dataset
@@ -94,7 +94,9 @@ for component in nx.connected_components(G.to_undirected()):
         })
 
 RINGS.sort(key=lambda x: -x["total_amount"])
-print(f"Found {len(RINGS)} fraud rings.")
+for i, r in enumerate(RINGS):
+    r["id"] = f"R-{i+1}"
+print(f"Found {len(RINGS)} suspicious clusters.")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -158,8 +160,8 @@ def get_low_risk():
 
 
 @app.get("/rings")
-def get_fraud_rings():
-    """Detected fraud rings — clusters of connected high-risk accounts."""
+def get_suspicious_clusters():
+    """Detected suspicious clusters — groups of connected high-risk accounts."""
     return {"total_rings": len(RINGS), "rings": RINGS[:20]}
 
 
@@ -258,6 +260,76 @@ If the account is clean (low risk, no flags), state: "No suspicious activity det
         "transactions_received": len(received),
         "total_sent": round(float(sent["amount"].sum()), 2) if len(sent) > 0 else 0,
         "total_received": round(float(received["amount"].sum()), 2) if len(received) > 0 else 0,
+        "profile": profile_text,
+    }
+
+
+@app.get("/profile/ring/{ring_id}")
+async def get_ring_profile(ring_id: str):
+    """Generate an AI-powered multi-entity investigation report."""
+    ring = next((r for r in RINGS if r.get("id") == ring_id), None)
+    if not ring:
+        return {"error": f"Cluster {ring_id} not found."}
+
+    account_ids = [a["account_id"] for a in ring["accounts"]]
+    
+    # Pull transactions where either endpoint is in the ring
+    ring_tx = DF[(DF["nameOrig"].isin(account_ids)) | (DF["nameDest"].isin(account_ids))]
+    
+    summary_lines = [
+        f"CLUSTER ID: {ring_id}",
+        f"TOTAL ACCOUNTS INVOLVED: {len(account_ids)}",
+        f"TOTAL INTERNAL VOLUME (identified): ${ring['total_amount']:,.2f}",
+        f"ACCOUNT IDs: {', '.join(account_ids)}",
+        f"",
+        f"TRANSACTION HISTORY ({len(ring_tx)} transactions involving members):"
+    ]
+    
+    # Top 15 transactions
+    top_tx = ring_tx.nlargest(15, "amount")
+    for _, tx in top_tx.iterrows():
+        summary_lines.append(
+            f"  [{step_to_timestamp(tx['step'])}] ${tx['amount']:,.2f} ({tx['type']}) : {tx['nameOrig']} → {tx['nameDest']}"
+        )
+        
+    transaction_summary = "\n".join(summary_lines)
+
+    prompt = f"""You are a risk analyst at TD Bank. Generate a concise Suspicious Activity Report (SAR) 
+for the following cluster of accounts flagged by our system for potential coordinated activity.
+
+{transaction_summary}
+
+Respond in EXACTLY this format (keep each section SHORT — 1-2 lines max, bullets max 8 words each):
+
+TYPOLOGY: [One of: Coordinated Smurfing | Aggregator Network | Layering Network | Unclear]
+SEVERITY: [CRITICAL / HIGH / MEDIUM / LOW / REVIEW]
+SUMMARY: [One sentence explaining the nature of the network]
+
+OBSERVATIONS:
+• [observation 1]
+• [observation 2]
+• [observation 3]
+(max 5 bullets)
+
+STRUCTURAL PATTERN: [2-3 sentences describing how they are sending money to each other. You MUST explicitly reference timestamps or time elapsed.]
+
+RECOMMENDED ACTION: [One specific next step, e.g., freeze all accounts, request KYC, monitor]
+
+Be specific, cite dollar amounts and account IDs. Use objective, non-deterministic language (e.g. "potential coordinated movement", "cluster", "displays characteristics of", rather than definitively labeling them as "fraudsters" or "criminals")."""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+        )
+        profile_text = response.text
+    except Exception as e:
+        profile_text = f"Error generating profile: {str(e)}"
+
+    return {
+        "ring_id": ring_id,
+        "accounts": account_ids,
+        "total_amount": ring["total_amount"],
         "profile": profile_text,
     }
 
