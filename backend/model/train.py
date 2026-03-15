@@ -11,7 +11,7 @@ from gnn import FraudGNN
 
 from sklearn.metrics import classification_report
 
-# Build graph — uses 100k rows for speed, remove sample_size for full dataset
+# Build graph, uses 100k rows for speed
 data, node_mapping, all_nodes = build_pyg_graph(sample_size=100000)
 
 n = data.num_nodes
@@ -95,7 +95,7 @@ with torch.no_grad():
     probs = torch.exp(out)[:, 1].tolist()
 print(classification_report(node_labels[test_mask], pred[test_mask], target_names=["normal", "fraud"]))
 
-# Export per-node risk scores (all_nodes from graph builder matches node index order)
+# Export per-node risk scores
 scores = {str(all_nodes[i]): round(probs[i], 4) for i in range(len(probs))}
 
 with open(os.path.join(save_dir, "scores.json"), "w") as f:

@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
 const API = API_BASE
 const WS  = API_BASE.replace("http", "ws") + "/ws/live"
 
-// ── TD Brand Colors ──────────────────────────────────────
+// TD Brand Colors
 const C = {
   bg:       "#0a0f1a",
   panel:    "#111827",
@@ -24,7 +24,7 @@ const C = {
 }
 
 export default function App() {
-  // ── State ──────────────────────────────────────────────
+  // State Variables
   const [graphData, setGraphData]       = useState({ nodes: [], links: [] })
   const [alerts, setAlerts]             = useState([])
   const [feed, setFeed]                 = useState([])
@@ -42,7 +42,7 @@ export default function App() {
   const wsRef    = useRef(null)
   const graphRef = useRef(null)
 
-  // ── Initial Data Fetch ─────────────────────────────────
+  // Initial Data Fetch
   useEffect(() => {
     const headers = { "ngrok-skip-browser-warning": "true" }
     fetch(`${API}/alerts`, { headers }).then(r => r.json()).then(setAlerts)
@@ -56,7 +56,7 @@ export default function App() {
     return () => wsRef.current?.close()
   }, [])
 
-  // ── Account Investigation ──────────────────────────────
+  // Account Investigation
   const investigateAccount = useCallback(async (accountId) => {
     setSelectedAccount(accountId)
     setClusterProfile(null)
@@ -96,7 +96,7 @@ export default function App() {
     setProfileLoading(false)
   }, [])
 
-  // ── Cluster Investigation ──────────────────────────────
+  // Cluster Investigation
   const investigateCluster = useCallback(async (cluster) => {
     setSelectedAccount(null)
     setAccountProfile(null)
@@ -135,12 +135,12 @@ export default function App() {
     setGraphLoading(false)
   }, [])
 
-  // ── Graph Node Click ───────────────────────────────────
+  // Graph Node Click
   const handleNodeClick = useCallback((node) => {
     investigateAccount(node.id)
   }, [investigateAccount])
 
-  // ── Graph Rendering ────────────────────────────────────
+  // Graph Rendering
   const nodeColor = (node) => {
     if (highlightNodes.has(node.id)) return C.green
     if (node.risk_score > 0.7) return C.red
@@ -162,11 +162,11 @@ export default function App() {
 
   const hasGraph = graphData.nodes.length > 0
 
-  // ── Render ─────────────────────────────────────────────
+  // Render
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", background: C.bg, color: C.text, overflow: "hidden" }}>
 
-      {/* ═══════ LEFT: Graph Canvas ═══════ */}
+      {/* LEFT: Graph Canvas */}
       <div style={{ flex: 1, position: "relative", height: "100vh", overflow: "hidden" }}>
 
         {/* Header */}
@@ -255,7 +255,7 @@ export default function App() {
         )}
       </div>
 
-      {/* ═══════ RIGHT: Sidebar ═══════ */}
+      {/* RIGHT: Sidebar */}
       <div style={{
         width: 360, height: "100vh", borderLeft: `1px solid ${C.border}`,
         display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
@@ -286,7 +286,7 @@ export default function App() {
         {/* Tab Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: 16, minHeight: 0 }}>
 
-          {/* ─── Alerts Tab ─── */}
+          {/* Alerts Tab */}
           {rightTab === "alerts" && <>
             <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1, marginBottom: 10, fontWeight: 600 }}>
               TOP FRAUD ALERTS <span style={{ color: C.dim }}>(click to investigate)</span>
@@ -340,7 +340,7 @@ export default function App() {
             ))}
           </>}
 
-          {/* ─── Clusters Tab ─── */}
+          {/* Clusters Tab */}
           {rightTab === "clusters" && <>
             <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1, marginBottom: 10, fontWeight: 600 }}>
               SUSPICIOUS CLUSTERS <span style={{ color: C.dim }}>({clusters.length} detected)</span>
@@ -383,7 +383,7 @@ export default function App() {
             ))}
           </>}
 
-          {/* ─── AI Profile Tab ─── */}
+          {/* AI Profile Tab */}
           {rightTab === "profile" && <>
             {profileLoading && (
               <div style={{ textAlign: "center", padding: 40, color: C.muted }}>
@@ -409,9 +409,7 @@ export default function App() {
 }
 
 
-// ══════════════════════════════════════════════════════════
-//  AI Profile Card Component
-// ══════════════════════════════════════════════════════════
+// AI Profile Card Component
 function ProfileCard({ profile, type }) {
   const isCluster = type === "cluster"
   const title = isCluster ? profile.ring_id : profile.account_id

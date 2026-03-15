@@ -11,7 +11,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# ── Load environment ─────────────────────────────────────────────
+# Load environment
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 app = FastAPI(title="Fraud Graph Monitor API")
@@ -23,30 +23,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Load Data at Startup (No Neo4j required!) ────────────────────
+
+# Load Data at Startup
 BASE = os.path.dirname(__file__)
 SCORES_PATH = os.path.join(BASE, "..", "model", "scores.json")
 CSV_PATH = os.path.join(BASE, "..", "data", "raw_data", "PS_20174392719_1491204439457_log.csv")
+
 
 # Load the 9-million-account risk scores
 with open(SCORES_PATH) as f:
     SCORES: dict[str, float] = json.load(f)
 
-# Load the PaySim transactions into Pandas (sampling for speed on Mac)
-# We load a reasonable subset for the API to serve graph data quickly
+
+# Load the PaySim transactions into Pandas (sampling for speed)
 print("Loading PaySim CSV for API...")
 DF = pd.read_csv(CSV_PATH)
 print(f"Loaded {len(DF):,} transactions for API graph serving.")
 
-# ── Timestamp helper ─────────────────────────────────────────────
-SIM_START = datetime(2024, 1, 1)  # Simulated start date
+
+SIM_START = datetime(2024, 1, 1)  # Simulated start date for timestamp helper
 
 def step_to_timestamp(step: int) -> str:
     """Convert PaySim step (hour number) to a readable date string."""
     dt = SIM_START + timedelta(hours=int(step))
     return dt.strftime("%b %d, %Y — %H:%M")
 
-# ── Pre-compute risk tiers ───────────────────────────────────────
+
+# Pre-compute risk tiers
 HIGH_RISK = sorted(
     [{"account_id": k, "risk_score": v} for k, v in SCORES.items() if v > 0.7],
     key=lambda x: -x["risk_score"],
@@ -59,19 +62,22 @@ LOW_RISK_COUNT = sum(1 for v in SCORES.values() if v <= 0.4)
 
 print(f"Risk tiers → High: {len(HIGH_RISK):,}  Medium: {len(MEDIUM_RISK):,}  Low: {LOW_RISK_COUNT:,}")
 
-# ── Gemini LLM Client ───────────────────────────────────────────
+
+# Gemini LLM Client
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# ── Suspicious Cluster Detection (pre-computed) ──────────────────────────
+
+# Suspicious Cluster Detection (pre-computed)
 print("Detecting suspicious clusters...")
 G = nx.DiGraph()
 
-# Build graph from transactions flagged as fraud in the dataset
-# OR where at least one endpoint is a high/medium-risk account
+
+# Build graph from transactions flagged as fraud in the dataset OR where at least one endpoint is a high/medium-risk account
 fraud_tx = DF[DF["isFraud"] == 1]
 for _, row in fraud_tx.iterrows():
     src, dst = row["nameOrig"], row["nameDest"]
     G.add_edge(src, dst, amount=row["amount"], tx_type=row["type"])
+
 
 # Find connected components (treat as undirected for ring detection)
 RINGS = []
@@ -99,10 +105,7 @@ for i, r in enumerate(RINGS):
 print(f"Found {len(RINGS)} suspicious clusters.")
 
 
-# ══════════════════════════════════════════════════════════════════
-#  ENDPOINTS
-# ══════════════════════════════════════════════════════════════════
-
+# ENDPOINTS
 @app.get("/graph/{account_id}")
 def get_account_graph(account_id: str):
     """Return the 1-hop neighborhood graph for a single account."""

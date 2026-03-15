@@ -2,14 +2,14 @@ import os
 import glob
 import pandas as pd
 
-# Define paths and the dataset you want to download
+# Define paths and the datasets to be downloaded
 DATA_DIR = os.path.join(os.path.dirname(__file__), "raw_data")
 DATASET = "ealaxi/paysim1"
 
 def get_kaggle_dataset(dataset_name, download_dir):
     os.makedirs(download_dir, exist_ok=True)
 
-    # Check if we already have a CSV file locally
+    # Check for CSV file locally
     csv_files = glob.glob(os.path.join(download_dir, "*.csv"))
     if csv_files:
         print(f"Found existing dataset: {csv_files[0]}")
@@ -18,7 +18,6 @@ def get_kaggle_dataset(dataset_name, download_dir):
     print(f"Csv not found locally. Downloading '{dataset_name}' from Kaggle...")
 
     try:
-        # Import inside the try/except loop so missing packages give a clean error
         from kaggle.api.kaggle_api_extended import KaggleApi
         api = KaggleApi()
         api.authenticate()
@@ -39,15 +38,6 @@ def get_kaggle_dataset(dataset_name, download_dir):
         print("Please ensure you have placed your API token at ~/.kaggle/kaggle.json")
         return None
 
-# Load the data
-# csv_path = get_kaggle_dataset(DATASET, DATA_DIR)
-# if csv_path:
-#     print("Loading dataset into pandas...")
-#     data = pd.read_csv(csv_path)
-#
-#     # Example output to verify it works
-#     print(data.head())
-#     print(f"Dataset loaded successfully with shape: {data.shape}")
 if __name__ == "__main__":
     csv_path = get_kaggle_dataset(DATASET, DATA_DIR)
     if csv_path:
