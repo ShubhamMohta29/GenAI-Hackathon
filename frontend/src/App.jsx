@@ -44,8 +44,9 @@ export default function App() {
 
   // ── Initial Data Fetch ─────────────────────────────────
   useEffect(() => {
-    fetch(`${API}/alerts`).then(r => r.json()).then(setAlerts)
-    fetch(`${API}/rings`).then(r => r.json()).then(d => setClusters(d.rings || []))
+    const headers = { "ngrok-skip-browser-warning": "true" }
+    fetch(`${API}/alerts`, { headers }).then(r => r.json()).then(setAlerts)
+    fetch(`${API}/rings`, { headers }).then(r => r.json()).then(d => setClusters(d.rings || []))
 
     wsRef.current = new WebSocket(WS)
     wsRef.current.onmessage = (e) => {
@@ -65,9 +66,10 @@ export default function App() {
     setGraphLoading(true)
     setProfileLoading(true)
 
+    const headers = { "ngrok-skip-browser-warning": "true" }
     const [graphRes, profileRes] = await Promise.allSettled([
-      fetch(`${API}/graph/${accountId}`).then(r => r.json()),
-      fetch(`${API}/profile/${accountId}`).then(r => r.json()),
+      fetch(`${API}/graph/${accountId}`, { headers }).then(r => r.json()),
+      fetch(`${API}/profile/${accountId}`, { headers }).then(r => r.json()),
     ])
 
     if (graphRes.status === "fulfilled") {
@@ -106,8 +108,9 @@ export default function App() {
     setHighlightNodes(new Set(ids))
 
     // Fetch cluster profile
+    const headers = { "ngrok-skip-browser-warning": "true" }
     try {
-      const res = await fetch(`${API}/profile/ring/${cluster.id}`)
+      const res = await fetch(`${API}/profile/ring/${cluster.id}`, { headers })
       const data = await res.json()
       setClusterProfile(data)
     } catch { setClusterProfile({ error: "Failed to load cluster profile." }) }
@@ -116,7 +119,7 @@ export default function App() {
     // Fetch graph for the first account in the cluster to show something
     setGraphLoading(true)
     try {
-      const res = await fetch(`${API}/graph/${ids[0]}`)
+      const res = await fetch(`${API}/graph/${ids[0]}`, { headers })
       const d = await res.json()
       const nodes = d.nodes.map(n => ({ ...n, id: n.id }))
       const links = d.edges.map(e => ({
@@ -175,7 +178,7 @@ export default function App() {
             fontWeight: 800, fontSize: 14, color: "white", letterSpacing: -1
           }}>TD</div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: 1 }}>FraudLink</h1>
+            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: 1 }}>Argus</h1>
             <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>AML Investigation Dashboard</div>
           </div>
         </div>
