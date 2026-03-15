@@ -1,15 +1,15 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "data"))
 
 import json
 import torch
 import torch.nn.functional as F
-from dataset import build_pyg_graph, DATA_DIR
+from dataset import build_pyg_graph
 from gnn import FraudGNN
 
 from sklearn.metrics import classification_report
-print(classification_report(node_labels[test_mask], pred[test_mask]))
 
 # Build graph — uses 100k rows for speed, remove sample_size for full dataset
 data, node_mapping, all_nodes = build_pyg_graph(sample_size=100000)
@@ -58,41 +58,45 @@ def train():
     optimizer.step()
     return loss.item()
 
+from sklearn.metrics import precision_score, recall_score, f1_score
+
 @torch.no_grad()
 def evaluate():
     model.eval()
     out  = model(data.x, data.edge_index)
     pred = out.argmax(dim=1)
-    correct = (pred[test_mask] == node_labels[test_mask]).sum()
-    return int(correct) / int(test_mask.sum())
+    
+    # Calculate Precision, Recall, F1 on the test set
+    y_true = node_labels[test_mask].numpy()
+    y_pred = pred[test_mask].numpy()
+    
+    prec = precision_score(y_true, y_pred, zero_division=0)
+    rec  = recall_score(y_true, y_pred, zero_division=0)
+    f1   = f1_score(y_true, y_pred, zero_division=0)
+    return prec, rec, f1
 
 print("Training GNN...")
 for epoch in range(1, 201):
     loss = train()
     if epoch % 20 == 0:
-        acc = evaluate()
-        print(f"Epoch {epoch:03d} | Loss: {loss:.4f} | Test Acc: {acc:.4f}")
+        prec, rec, f1 = evaluate()
+        print(f"Epoch {epoch:03d} | Loss: {loss:.4f} | Prec: {prec:.4f} | Rec: {rec:.4f} | F1: {f1:.4f}")
 
 # Save model
 save_dir = os.path.dirname(__file__)
 torch.save(model.state_dict(), os.path.join(save_dir, "fraud_gnn.pt"))
 print("Model saved → model/fraud_gnn.pt")
 
-# Export per-node risk scores + account ID mapping
+# Final evaluation and classification report
 model.eval()
 with torch.no_grad():
     out   = model(data.x, data.edge_index)
+    pred  = out.argmax(dim=1)
     probs = torch.exp(out)[:, 1].tolist()
+print(classification_report(node_labels[test_mask], pred[test_mask], target_names=["normal", "fraud"]))
 
-# Load the node mapping from dataset to get account IDs
-import numpy as np
-import pandas as pd
-from generate_data import get_kaggle_dataset, DATASET
-csv_path = get_kaggle_dataset(DATASET, DATA_DIR)
-df = pd.read_csv(csv_path, nrows=100000)
-all_nodes = np.unique(np.concatenate((df['nameOrig'].unique(), df['nameDest'].unique())))
-
-scores = {str(all_nodes[i]): round(probs[i], 4) for i in range(min(len(all_nodes), len(probs)))}
+# Export per-node risk scores (all_nodes from graph builder matches node index order)
+scores = {str(all_nodes[i]): round(probs[i], 4) for i in range(len(probs))}
 
 with open(os.path.join(save_dir, "scores.json"), "w") as f:
     json.dump(scores, f)
