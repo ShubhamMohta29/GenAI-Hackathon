@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import ForceGraph2D from "react-force-graph-2d"
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
@@ -41,6 +41,26 @@ export default function App() {
 
   const wsRef = useRef(null)
   const graphRef = useRef(null)
+
+  const clearInvestigation = useCallback(() => {
+    setGraphData({ nodes: [], links: [] })
+    setSelectedAccount(null)
+    setHighlightNodes(new Set())
+    setAccountProfile(null)
+    setClusterProfile(null)
+    setRightTab("alerts")
+  }, [])
+
+  const degreeMap = useMemo(() => {
+    const map = new Map()
+    graphData.links.forEach((l) => {
+      const src = typeof l.source === "object" ? l.source.id : l.source
+      const tgt = typeof l.target === "object" ? l.target.id : l.target
+      map.set(src, (map.get(src) || 0) + 1)
+      map.set(tgt, (map.get(tgt) || 0) + 1)
+    })
+    return map
+  }, [graphData.links])
 
   // Initial Data Fetch
   useEffect(() => {
@@ -140,18 +160,19 @@ export default function App() {
     investigateAccount(node.id)
   }, [investigateAccount])
 
-  // Graph Rendering
+  // Graph Rendering (size scales with transaction count; selected = white)
   const nodeColor = (node) => {
-    if (highlightNodes.has(node.id)) return C.text
+    if (highlightNodes.has(node.id)) return "#ffffff"
     if (node.risk_score > 0.7) return C.red
     if (node.risk_score > 0.4) return C.amber
     return C.mint
   }
 
   const nodeVal = (node) => {
-    if (highlightNodes.has(node.id)) return 16
-    if (node.risk_score > 0.7) return 8
-    return 5
+    const degree = degreeMap.get(node.id) || 0
+    const base = highlightNodes.has(node.id) ? 14 : node.risk_score > 0.7 ? 8 : 5
+    const fromDegree = Math.min(degree * 0.5, 14)
+    return base + fromDegree
   }
 
   const linkColor = (l) => {
@@ -160,16 +181,18 @@ export default function App() {
 
   const linkWidth = (l) => l.is_fraud ? 2.5 : 1
 
-  // ── Custom Node Renderer (professional risk % display) ─
+  // ── Custom Node Renderer (radius scales with transaction count; selected = white) ─
   const nodeCanvasObject = useCallback((node, ctx, globalScale) => {
     const risk = node.risk_score ?? 0
     const pct = (risk * 100).toFixed(0)
     const isHighlighted = highlightNodes.has(node.id)
-    const radius = isHighlighted ? 9 : (risk > 0.7 ? 7 : 5)
+    const degree = degreeMap.get(node.id) || 0
+    const baseRadius = isHighlighted ? 9 : risk > 0.7 ? 7 : 5
+    const radius = baseRadius + Math.min(degree * 0.4, 12)
 
     // Node color
     let color = C.mint
-    if (isHighlighted) color = C.text
+    if (isHighlighted) color = "#ffffff"
     else if (risk > 0.7) color = C.red
     else if (risk > 0.4) color = C.amber
 
@@ -225,127 +248,114 @@ export default function App() {
     // Text
     ctx.fillStyle = color
     ctx.fillText(`${pct}%`, node.x, labelY)
-  }, [highlightNodes])
+  }, [highlightNodes, degreeMap])
 
   const nodePointerAreaPaint = useCallback((node, color, ctx) => {
-    const radius = (node.risk_score ?? 0) > 0.7 ? 10 : 7
+    const degree = degreeMap.get(node.id) || 0
+    const base = (node.risk_score ?? 0) > 0.7 ? 10 : 7
+    const r = base + Math.min(degree * 0.4, 12) + 3
     ctx.beginPath()
-    ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI)
+    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
     ctx.fillStyle = color
     ctx.fill()
-  }, [])
+  }, [degreeMap])
 
   const hasGraph = graphData.nodes.length > 0
+  const selectedNodeRisk = selectedAccount
+    ? (accountProfile?.risk_score ?? graphData.nodes.find((n) => n.id === selectedAccount)?.risk_score ?? 0)
+    : 0
+  const showSarButton = selectedAccount && selectedNodeRisk > 0.4
 
-  // Render
+  // Render (outer layout: B&W dreamy; graph: colors unchanged)
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", background: C.bg, color: C.green, overflow: "hidden" }}>
-
-      {/* ═══════ FAR LEFT: Live Transactions Panel ═══════ */}
-      <div style={{
-        width: 280, height: "100vh", borderRight: `1px solid ${C.border}`,
-        display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
-        background: C.panel
-      }}>
-        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13 }}>⚡</span>
-          <span style={{ fontSize: 11, color: C.muted, letterSpacing: 1, fontWeight: 600 }}>LIVE TRANSACTIONS</span>
-          <span style={{
-            marginLeft: "auto", fontSize: 9, padding: "2px 8px", borderRadius: 10,
-            background: C.green + "18", color: C.green, fontWeight: 600
-          }}>LIVE</span>
+    <div className="app">
+      <aside className="panel panel-left">
+        <div className="panel-header">
+          <span>Live transactions</span>
+          <span className="live-pill">LIVE</span>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", minHeight: 0 }}>
+        <div className="panel-body">
           {feed.map((ev, i) => (
-            <div key={i} onClick={() => investigateAccount(ev.dst)}
-              style={{
-                padding: "8px 10px", marginBottom: 4, borderRadius: 8,
-                background: ev.flagged ? C.red + "0d" : C.card,
-                border: ev.flagged ? `1px solid ${C.red}22` : "1px solid transparent",
-                fontSize: 11, cursor: "pointer", transition: "all 0.15s"
-              }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="mono" style={{ color: ev.flagged ? "#fca5a5" : C.muted, fontSize: 10, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div
+              key={i}
+              onClick={() => investigateAccount(ev.dst)}
+              className={`card card-clickable ${ev.flagged ? "card-flagged" : ""}`}
+            >
+              <div className="row">
+                <span className="mono" style={{ fontSize: 11, color: ev.flagged ? C.red : "var(--layout-text-secondary)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {ev.src} → {ev.dst}
                 </span>
-                <span style={{ color: ev.flagged ? C.red : C.mint, fontSize: 10, fontWeight: 600 }}>
-                  {ev.flagged ? "⚠" : "✓"}
-                </span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: ev.flagged ? C.red : C.mint }}>{ev.flagged ? "⚠" : "✓"}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, color: C.dim, fontSize: 10 }}>
+              <div className="row-meta" style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>${ev.amount?.toLocaleString()}</span>
                 <span>{ev.type}</span>
               </div>
             </div>
           ))}
         </div>
-      </div>
+      </aside>
 
-      {/* CENTER: Graph Canvas */}
-      <div style={{ flex: 1, position: "relative", height: "100vh", overflow: "hidden" }}>
-
-        {/* Header */}
-        <div style={{ position: "absolute", top: 20, left: 24, zIndex: 10, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 8,
-            background: "linear-gradient(135deg, #0a7a33, #00b050)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontWeight: 800, fontSize: 14, color: "white", letterSpacing: -1
-          }}>TD</div>
+      <main style={{ flex: 1, position: "relative", height: "100vh", overflow: "hidden" }}>
+        <header className="app-header">
+          <div className="app-logo" style={{ background: C.green, color: "#fff" }}>TD</div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.green, letterSpacing: 1 }}>Argus</h1>
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>AML Investigation Dashboard</div>
+            <h1 className="app-title">Argus</h1>
+            <div className="app-subtitle">AML Investigation</div>
           </div>
-        </div>
+        </header>
 
-        {/* Legend */}
-        <div style={{
-          position: "absolute", top: 20, right: 20, zIndex: 10,
-          display: "flex", gap: 12, fontSize: 10, color: C.muted,
-          background: C.panel + "cc", borderRadius: 8, padding: "6px 14px",
-          border: `1px solid ${C.border}`, backdropFilter: "blur(8px)"
-        }}>
-          <span style={{ color: C.text }}>● Selected</span>
-          <span style={{ color: C.red }}>● High Risk</span>
+        <div className="legend">
+          <span style={{ color: "#ffffff" }}>● Selected</span>
+          <span style={{ color: C.red }}>● High risk</span>
           <span style={{ color: C.amber }}>● Medium</span>
           <span style={{ color: C.mint }}>● Low</span>
         </div>
 
-        {/* Graph info bar */}
-        {selectedAccount && hasGraph && (
-          <div style={{
-            position: "absolute", bottom: 20, left: 24, zIndex: 10,
-            background: C.panel + "ee", borderRadius: 10, padding: "10px 16px",
-            border: `1px solid ${C.text}33`, backdropFilter: "blur(12px)",
-            display: "flex", gap: 20, alignItems: "center", fontSize: 11
-          }}>
-            <span style={{ color: C.text, fontWeight: 600 }}>◈ INVESTIGATING</span>
-            <span className="mono" style={{ color: C.text }}>{selectedAccount}</span>
-            <span style={{ color: C.muted }}>{graphData.nodes.length} accounts</span>
-            <span style={{ color: C.muted }}>{graphData.links.length} transactions</span>
+        {hasGraph && (
+          <div className="graph-info-bar">
+            {selectedAccount && (
+              <>
+                <span style={{ fontWeight: 600, color: "var(--layout-text)" }}>Investigating</span>
+                <span className="mono" style={{ color: "var(--layout-text)" }}>{selectedAccount}</span>
+              </>
+            )}
+            <span>{graphData.nodes.length} accounts</span>
+            <span>{graphData.links.length} transactions</span>
+            {showSarButton && (
+              <button
+                type="button"
+                className="graph-info-bar-sar"
+                onClick={() => setRightTab("profile")}
+                title="View SAR report for this account"
+                aria-label="Open SAR report"
+              >
+                SAR report
+              </button>
+            )}
+            <button
+              type="button"
+              className="graph-info-bar-close"
+              onClick={clearInvestigation}
+              title="Clear and return to overview"
+              aria-label="Close investigation"
+            >
+              Close
+            </button>
           </div>
         )}
 
-        {/* Empty state */}
         {!hasGraph && !graphLoading && (
-          <div style={{
-            position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-            textAlign: "center", zIndex: 5
-          }}>
-            <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>🔍</div>
-            <div style={{ fontSize: 14, color: C.dim, maxWidth: 280, lineHeight: 1.6 }}>
-              Select an account from the <b style={{ color: C.muted }}>Alerts</b> list or a cluster from <b style={{ color: C.muted }}>Clusters</b> to investigate its transaction network.
+          <div className="empty-state">
+            <div className="empty-state-text">
+              Select an account from <strong>Alerts</strong> or a cluster from <strong>Clusters</strong> to view the transaction network.
             </div>
           </div>
         )}
 
-        {/* Loading state */}
         {graphLoading && (
-          <div style={{
-            position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-            textAlign: "center", zIndex: 5
-          }}>
-            <div style={{ fontSize: 14, color: C.green }}>Loading network graph...</div>
+          <div className="loading-state">
+            <div className="loading-state-text">Loading network…</div>
           </div>
         )}
 
@@ -367,146 +377,94 @@ export default function App() {
             cooldownTicks={80}
           />
         )}
-      </div>
+      </main>
 
-      {/* RIGHT: Sidebar */}
-      <div style={{
-        width: 360, height: "100vh", borderLeft: `1px solid ${C.border}`,
-        display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
-        background: C.panel
-      }}>
-
-        {/* Tab Switcher */}
-        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}` }}>
+      <aside className="panel panel-right">
+        <div className="tabs">
           {[
             ["alerts", "Alerts"],
             ["clusters", "Clusters"],
-            ["profile", "AI Report"],
+            ["profile", "Report"],
           ].map(([key, label]) => (
-            <button key={key} onClick={() => setRightTab(key)}
-              style={{
-                flex: 1, padding: "12px 0", fontSize: 11, fontWeight: 600,
-                letterSpacing: 0.5, cursor: "pointer",
-                background: rightTab === key ? C.text + "15" : "transparent",
-                color: rightTab === key ? C.text : C.muted,
-                border: "none", borderBottom: rightTab === key ? `2px solid ${C.text}` : "2px solid transparent",
-                transition: "all 0.2s"
-              }}>
+            <button key={key} type="button" onClick={() => setRightTab(key)} className={`tab ${rightTab === key ? "active" : ""}`}>
               {label}
             </button>
           ))}
         </div>
-
-        {/* Tab Content */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 16, minHeight: 0 }}>
-
-          {/* Alerts Tab */}
-          {rightTab === "alerts" && <>
-            <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1, marginBottom: 10, fontWeight: 600 }}>
-              TOP FRAUD ALERTS <span style={{ color: C.dim }}>(click to investigate)</span>
-            </div>
-            {alerts.slice(0, 15).map(a => (
-              <div key={a.account_id} onClick={() => investigateAccount(a.account_id)}
-                style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "9px 12px", marginBottom: 4, borderRadius: 8,
-                  background: selectedAccount === a.account_id ? C.text + "15" : C.card,
-                  border: selectedAccount === a.account_id ? `1px solid ${C.text}55` : "1px solid transparent",
-                  cursor: "pointer", fontSize: 12, transition: "all 0.15s"
-                }}
-                onMouseEnter={e => { if (selectedAccount !== a.account_id) e.currentTarget.style.borderColor = C.red + "44" }}
-                onMouseLeave={e => { if (selectedAccount !== a.account_id) e.currentTarget.style.borderColor = "transparent" }}
-              >
-                <span className="mono" style={{ color: C.muted, fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {a.account_id}
-                </span>
-                <span style={{ color: a.risk_score > 0.85 ? C.red : C.amber, fontWeight: 700 }}>
-                  {(a.risk_score * 100).toFixed(0)}%
-                </span>
+        <div className="panel-body">
+          {rightTab === "alerts" && (
+            <>
+              <div className="section-label">
+                Alerts <span className="section-label-muted">(click to investigate)</span>
               </div>
-            ))}
-          </>}
-
-          {/* Clusters Tab */}
-          {rightTab === "clusters" && <>
-            <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1, marginBottom: 10, fontWeight: 600 }}>
-              SUSPICIOUS CLUSTERS <span style={{ color: C.dim }}>({clusters.length} detected)</span>
-            </div>
-            {clusters.map((c, i) => (
-              <div key={c.id || i} onClick={() => investigateCluster(c)}
-                style={{
-                  padding: "10px 12px", marginBottom: 6, borderRadius: 10,
-                  background: C.card, cursor: "pointer",
-                  border: "1px solid transparent", transition: "all 0.15s"
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = C.amber + "44"}
-                onMouseLeave={e => e.currentTarget.style.borderColor = "transparent"}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontWeight: 700, fontSize: 13, color: C.amber }}>{c.id || `R-${i + 1}`}</span>
-                  <span style={{ fontSize: 11, color: C.muted }}>{c.size} accounts</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>
-                    ${c.total_amount?.toLocaleString()}
-                  </span>
-                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: C.red + "15", color: "#fca5a5" }}>
-                    View Report →
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-                  {c.accounts.slice(0, 3).map(a => (
-                    <span key={a.account_id} className="mono" style={{
-                      fontSize: 9, padding: "2px 6px", borderRadius: 4,
-                      background: a.risk_score > 0.7 ? C.red + "18" : C.card,
-                      color: a.risk_score > 0.7 ? "#fca5a5" : C.dim,
-                      border: `1px solid ${a.risk_score > 0.7 ? C.red + "33" : C.border}`
-                    }}>
-                      {a.account_id.slice(0, 10)}… {(a.risk_score * 100).toFixed(0)}%
+              {alerts.slice(0, 15).map((a) => (
+                <div
+                  key={a.account_id}
+                  onClick={() => investigateAccount(a.account_id)}
+                  className={`card card-clickable ${selectedAccount === a.account_id ? "selected" : ""}`}
+                >
+                  <div className="row">
+                    <span className="mono" style={{ fontSize: 11, color: "var(--layout-text-secondary)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {a.account_id}
                     </span>
-                  ))}
+                    <span style={{ fontWeight: 600, color: a.risk_score > 0.85 ? C.red : C.amber }}>{(a.risk_score * 100).toFixed(0)}%</span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </>}
+              ))}
+            </>
+          )}
 
-          {/* AI Profile Tab */}
-          {rightTab === "profile" && <>
-            {profileLoading && (
-              <div style={{ textAlign: "center", padding: 40, color: C.muted }}>
-                <div style={{ fontSize: 24, marginBottom: 10 }}>🔍</div>
-                <div style={{ fontSize: 12 }}>Generating AI report...</div>
+          {rightTab === "clusters" && (
+            <>
+              <div className="section-label">
+                Clusters <span className="section-label-muted">({clusters.length})</span>
               </div>
-            )}
+              {clusters.map((c, i) => (
+                <div key={c.id || i} onClick={() => investigateCluster(c)} className="card card-clickable">
+                  <div className="row">
+                    <span style={{ fontWeight: 600, fontSize: "var(--layout-s4)", color: "var(--layout-text)" }}>{c.id || `R-${i + 1}`}</span>
+                    <span style={{ fontSize: 11, color: "var(--layout-text-secondary)" }}>{c.size} accounts</span>
+                  </div>
+                  <div className="row-meta" style={{ display: "flex", justifyContent: "space-between", marginTop: "var(--layout-s2)" }}>
+                    <span style={{ color: "var(--layout-text)" }}>${c.total_amount?.toLocaleString()}</span>
+                    <span style={{ color: "var(--layout-text-tertiary)" }}>View report →</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, marginTop: "var(--layout-s2)", flexWrap: "wrap" }}>
+                    {c.accounts.slice(0, 3).map((a) => (
+                      <span key={a.account_id} className="badge">
+                        {a.account_id.slice(0, 10)}… {(a.risk_score * 100).toFixed(0)}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
 
-            {!profileLoading && accountProfile && <ProfileCard profile={accountProfile} type="account" />}
-            {!profileLoading && clusterProfile && <ProfileCard profile={clusterProfile} type="cluster" />}
-
-            {!profileLoading && !accountProfile && !clusterProfile && (
-              <div style={{ textAlign: "center", padding: 40, color: C.dim }}>
-                <div style={{ fontSize: 32, marginBottom: 10 }}>🤖</div>
-                <div style={{ fontSize: 12 }}>Click an account or cluster to generate an AI investigation report.</div>
-              </div>
-            )}
-          </>}
+          {rightTab === "profile" && (
+            <>
+              {profileLoading && <div className="sidebar-empty">Generating report…</div>}
+              {!profileLoading && accountProfile && <ProfileCard profile={accountProfile} type="account" />}
+              {!profileLoading && clusterProfile && <ProfileCard profile={clusterProfile} type="cluster" />}
+              {!profileLoading && !accountProfile && !clusterProfile && (
+                <div className="sidebar-empty">Select an account or cluster to view the investigation report.</div>
+              )}
+            </>
+          )}
         </div>
-      </div>
+      </aside>
     </div>
   )
 }
 
 
-// AI Profile Card Component
 function ProfileCard({ profile, type }) {
   const isCluster = type === "cluster"
   const title = isCluster ? profile.ring_id : profile.account_id
   const profileText = profile.profile || ""
-
-  // Parse SAR text into sections
   const sections = {}
-  const lines = profileText.split("\n")
   let currentKey = null
-  for (const line of lines) {
+  for (const line of profileText.split("\n")) {
     const match = line.match(/^([A-Z ]+):(.*)/)
     if (match && ["TYPOLOGY", "SEVERITY", "SUMMARY", "RED FLAGS", "OBSERVATIONS", "TRANSACTION PATTERN", "STRUCTURAL PATTERN", "CONNECTED ENTITIES", "RECOMMENDED ACTION"].includes(match[1].trim())) {
       currentKey = match[1].trim()
@@ -515,120 +473,77 @@ function ProfileCard({ profile, type }) {
       sections[currentKey] = (sections[currentKey] || "") + "\n" + line
     }
   }
-
-  const severityColor = { "CRITICAL": C.red, "HIGH": "#f97316", "MEDIUM": C.amber, "LOW": C.mint, "REVIEW": C.blue }
   const severity = (sections["SEVERITY"] || "").trim()
-  const sevColor = severityColor[severity] || C.muted
 
   return (
     <div>
-      {/* Header */}
-      <div style={{
-        background: C.card, borderRadius: 12, padding: "14px 16px", marginBottom: 12,
-        border: `1px solid ${sevColor}33`
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="profile-card">
+        <div className="profile-card-header">
           <div>
-            <div style={{ fontSize: 10, color: C.dim, marginBottom: 2 }}>{isCluster ? "CLUSTER" : "ACCOUNT"}</div>
-            <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{title}</div>
+            <div className="profile-card-title">{isCluster ? "Cluster" : "Account"}</div>
+            <div className="profile-card-value">{title}</div>
           </div>
-          <div style={{
-            padding: "4px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700,
-            background: sevColor + "18", color: sevColor, border: `1px solid ${sevColor}44`
-          }}>
-            {severity || "N/A"}
-          </div>
+          <span className="profile-badge">{severity || "—"}</span>
         </div>
-
         {!isCluster && profile.risk_score !== undefined && (
-          <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 11, color: C.muted }}>
-            <span>Risk: <b style={{ color: profile.risk_score > 0.7 ? C.red : C.mint }}>{(profile.risk_score * 100).toFixed(1)}%</b></span>
-            <span>Sent: <b style={{ color: C.text }}>{profile.transactions_sent}</b></span>
-            <span>Received: <b style={{ color: C.text }}>{profile.transactions_received}</b></span>
+          <div className="profile-body-muted" style={{ display: "flex", gap: "var(--layout-s4)", marginTop: "var(--layout-s2)" }}>
+            <span>Risk <strong style={{ color: profile.risk_score > 0.7 ? C.red : C.mint }}>{(profile.risk_score * 100).toFixed(1)}%</strong></span>
+            <span>Sent <strong style={{ color: "var(--layout-text)" }}>{profile.transactions_sent}</strong></span>
+            <span>Received <strong style={{ color: "var(--layout-text)" }}>{profile.transactions_received}</strong></span>
           </div>
         )}
-
         {!isCluster && (profile.total_sent > 0 || profile.total_received > 0) && (
-          <div style={{ display: "flex", gap: 16, marginTop: 4, fontSize: 11, color: C.muted }}>
-            <span>Total Out: <b style={{ color: C.text }}>${profile.total_sent?.toLocaleString()}</b></span>
-            <span>Total In: <b style={{ color: C.text }}>${profile.total_received?.toLocaleString()}</b></span>
+          <div className="profile-body-muted" style={{ display: "flex", gap: "var(--layout-s4)", marginTop: "var(--layout-s1)" }}>
+            <span>Out <strong style={{ color: "var(--layout-text)" }}>${profile.total_sent?.toLocaleString()}</strong></span>
+            <span>In <strong style={{ color: "var(--layout-text)" }}>${profile.total_received?.toLocaleString()}</strong></span>
           </div>
         )}
-
         {isCluster && (
-          <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 11, color: C.muted }}>
-            <span>Accounts: <b style={{ color: C.text }}>{profile.accounts?.length}</b></span>
-            <span>Volume: <b style={{ color: C.text }}>${profile.total_amount?.toLocaleString()}</b></span>
+          <div className="profile-body-muted" style={{ display: "flex", gap: "var(--layout-s4)", marginTop: "var(--layout-s2)" }}>
+            <span>Accounts <strong style={{ color: "var(--layout-text)" }}>{profile.accounts?.length}</strong></span>
+            <span>Volume <strong style={{ color: "var(--layout-text)" }}>${profile.total_amount?.toLocaleString()}</strong></span>
           </div>
         )}
       </div>
 
-      {/* Typology */}
       {sections["TYPOLOGY"] && (
-        <div style={{
-          display: "inline-block", padding: "4px 12px", borderRadius: 6,
-          background: C.text + "15", color: C.text, fontSize: 11, fontWeight: 600,
-          marginBottom: 12, border: `1px solid ${C.text}33`
-        }}>
+        <div className="profile-badge" style={{ marginBottom: "var(--layout-s3)", background: "rgba(250,250,250,0.08)", borderColor: "rgba(250,250,250,0.15)", color: "var(--layout-text)" }}>
           {sections["TYPOLOGY"].trim()}
         </div>
       )}
 
-      {/* Summary */}
-      {sections["SUMMARY"] && (
-        <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5, marginBottom: 14, fontWeight: 500 }}>
-          {sections["SUMMARY"].trim()}
-        </div>
-      )}
+      {sections["SUMMARY"] && <div className="profile-section profile-body">{sections["SUMMARY"].trim()}</div>}
 
-      {/* Red Flags / Observations */}
       {(sections["RED FLAGS"] || sections["OBSERVATIONS"]) && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: C.amber, fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>
-            {sections["RED FLAGS"] ? "RED FLAGS" : "OBSERVATIONS"}
-          </div>
-          {(sections["RED FLAGS"] || sections["OBSERVATIONS"]).trim().split("\n").filter(l => l.trim().startsWith("•") || l.trim().startsWith("-")).map((line, i) => (
-            <div key={i} style={{
-              fontSize: 12, color: C.muted, padding: "4px 0", paddingLeft: 8,
-              borderLeft: `2px solid ${C.amber}44`
-            }}>
-              {line.trim()}
-            </div>
-          ))}
+        <div className="profile-section">
+          <div className="profile-section-title">{sections["RED FLAGS"] ? "Red flags" : "Observations"}</div>
+          <ul className="profile-bullets" style={{ listStyle: "none", paddingLeft: "var(--layout-s3)" }}>
+            {(sections["RED FLAGS"] || sections["OBSERVATIONS"]).trim().split("\n").filter((l) => l.trim().startsWith("•") || l.trim().startsWith("-")).map((line, i) => (
+              <li key={i}>{line.trim()}</li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* Transaction / Structural Pattern */}
       {(sections["TRANSACTION PATTERN"] || sections["STRUCTURAL PATTERN"]) && (
-        <div style={{
-          background: C.card, borderRadius: 8, padding: 12, marginBottom: 14,
-          fontSize: 12, color: C.muted, lineHeight: 1.6,
-          borderLeft: `3px solid ${C.blue}66`
-        }}>
-          <div style={{ fontSize: 10, color: C.blue, fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>
-            {sections["TRANSACTION PATTERN"] ? "TRANSACTION PATTERN" : "STRUCTURAL PATTERN"}
+        <div className="profile-section profile-callout">
+          <div className="profile-section-title" style={{ marginBottom: "var(--layout-s2)" }}>
+            {sections["TRANSACTION PATTERN"] ? "Transaction pattern" : "Structural pattern"}
           </div>
           {(sections["TRANSACTION PATTERN"] || sections["STRUCTURAL PATTERN"]).trim()}
         </div>
       )}
 
-      {/* Connected Entities */}
       {sections["CONNECTED ENTITIES"] && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: C.dim, fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>CONNECTED ENTITIES</div>
-          <div className="mono" style={{ fontSize: 11, color: C.muted, lineHeight: 1.8 }}>
-            {sections["CONNECTED ENTITIES"].trim()}
-          </div>
+        <div className="profile-section">
+          <div className="profile-section-title">Connected entities</div>
+          <div className="profile-body-muted mono" style={{ fontSize: 11 }}>{sections["CONNECTED ENTITIES"].trim()}</div>
         </div>
       )}
 
-      {/* Recommended Action */}
       {sections["RECOMMENDED ACTION"] && (
-        <div style={{
-          background: C.red + "10", borderRadius: 8, padding: 12,
-          border: `1px solid ${C.red}33`, fontSize: 12, color: "#fca5a5", lineHeight: 1.5
-        }}>
-          <div style={{ fontSize: 10, color: C.red, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>RECOMMENDED ACTION</div>
+        <div className="profile-section profile-action">
+          <div className="profile-action-title">Recommended action</div>
           {sections["RECOMMENDED ACTION"].trim()}
         </div>
       )}
