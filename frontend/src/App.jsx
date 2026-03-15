@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import ForceGraph2D from "react-force-graph-2d"
 
-const API = "http://localhost:8000"
-const WS  = "ws://localhost:8000/ws/live"
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
+const API = API_BASE
+const WS  = API_BASE.replace("http", "ws") + "/ws/live"
 
 // ── TD Brand Colors ──────────────────────────────────────
 const C = {
