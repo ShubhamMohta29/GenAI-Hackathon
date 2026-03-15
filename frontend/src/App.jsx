@@ -3,24 +3,24 @@ import ForceGraph2D from "react-force-graph-2d"
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
 const API = API_BASE
-const WS  = API_BASE.replace("http", "ws") + "/ws/live"
+const WS = API_BASE.replace("http", "ws") + "/ws/live"
 
 // TD Brand Colors
 const C = {
-  bg:       "#0a0f1a",
-  panel:    "#111827",
-  card:     "#1e293b",
-  border:   "#1e293b",
-  text:     "#e2e8f0",
-  muted:    "#94a3b8",
-  dim:      "#475569",
-  green:    "#00B140",
+  bg: "#0a0f1a",
+  panel: "#111827",
+  card: "#1e293b",
+  border: "#1e293b",
+  text: "#e2e8f0",
+  muted: "#94a3b8",
+  dim: "#475569",
+  green: "#00B140",
   greenDim: "#00B14033",
-  red:      "#ef4444",
-  amber:    "#f59e0b",
-  blue:     "#38bdf8",
-  pink:     "#f43f5e",
-  mint:     "#10b981",
+  red: "#ef4444",
+  amber: "#f59e0b",
+  blue: "#38bdf8",
+  pink: "#f43f5e",
+  mint: "#10b981",
 }
 
 export default function App() {
@@ -32,14 +32,14 @@ export default function App() {
   const [highlightNodes, setHighlightNodes] = useState(new Set())
 
   // AI features
-  const [clusters, setClusters]         = useState([])
+  const [clusters, setClusters] = useState([])
   const [accountProfile, setAccountProfile] = useState(null)
   const [clusterProfile, setClusterProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [graphLoading, setGraphLoading] = useState(false)
-  const [rightTab, setRightTab]         = useState("alerts")
+  const [rightTab, setRightTab] = useState("alerts")
 
-  const wsRef    = useRef(null)
+  const wsRef = useRef(null)
   const graphRef = useRef(null)
 
   // Initial Data Fetch
@@ -131,7 +131,7 @@ export default function App() {
       setTimeout(() => {
         if (graphRef.current) graphRef.current.zoomToFit(600, 60)
       }, 500)
-    } catch {}
+    } catch { }
     setGraphLoading(false)
   }, [])
 
@@ -142,7 +142,7 @@ export default function App() {
 
   // Graph Rendering
   const nodeColor = (node) => {
-    if (highlightNodes.has(node.id)) return C.green
+    if (highlightNodes.has(node.id)) return C.text
     if (node.risk_score > 0.7) return C.red
     if (node.risk_score > 0.4) return C.amber
     return C.mint
@@ -155,30 +155,145 @@ export default function App() {
   }
 
   const linkColor = (l) => {
-    return l.is_fraud ? C.red + "88" : C.green + "44"
+    return l.is_fraud ? C.red + "88" : C.text + "44"
   }
 
   const linkWidth = (l) => l.is_fraud ? 2.5 : 1
+
+  // ── Custom Node Renderer (professional risk % display) ─
+  const nodeCanvasObject = useCallback((node, ctx, globalScale) => {
+    const risk = node.risk_score ?? 0
+    const pct = (risk * 100).toFixed(0)
+    const isHighlighted = highlightNodes.has(node.id)
+    const radius = isHighlighted ? 9 : (risk > 0.7 ? 7 : 5)
+
+    // Node color
+    let color = C.mint
+    if (isHighlighted) color = C.text
+    else if (risk > 0.7) color = C.red
+    else if (risk > 0.4) color = C.amber
+
+    // Outer glow for high-risk / highlighted nodes
+    if (risk > 0.7 || isHighlighted) {
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI)
+      ctx.fillStyle = color + "20"
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, radius + 1.5, 0, 2 * Math.PI)
+      ctx.strokeStyle = color + "55"
+      ctx.lineWidth = 1
+      ctx.stroke()
+    }
+
+    // Main circle
+    ctx.beginPath()
+    ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI)
+    ctx.fillStyle = color
+    ctx.fill()
+
+    // Inner highlight (subtle shine)
+    ctx.beginPath()
+    ctx.arc(node.x, node.y, radius * 0.55, 0, 2 * Math.PI)
+    ctx.fillStyle = "rgba(255,255,255,0.12)"
+    ctx.fill()
+
+    // Risk % label below the node
+    const labelSize = Math.max(9 / globalScale, 2.2)
+    ctx.font = `600 ${labelSize}px "Inter", "Segoe UI", system-ui, sans-serif`
+    ctx.textAlign = "center"
+    ctx.textBaseline = "top"
+
+    // Badge background
+    const labelY = node.y + radius + 2
+    const textWidth = ctx.measureText(`${pct}%`).width
+    const padX = labelSize * 0.4
+    const padY = labelSize * 0.15
+    ctx.fillStyle = C.panel + "dd"
+    ctx.beginPath()
+    const bRadius = labelSize * 0.3
+    const bx = node.x - textWidth / 2 - padX
+    const by = labelY - padY
+    const bw = textWidth + padX * 2
+    const bh = labelSize + padY * 2
+    ctx.roundRect(bx, by, bw, bh, bRadius)
+    ctx.fill()
+    ctx.strokeStyle = color + "66"
+    ctx.lineWidth = 0.5
+    ctx.stroke()
+
+    // Text
+    ctx.fillStyle = color
+    ctx.fillText(`${pct}%`, node.x, labelY)
+  }, [highlightNodes])
+
+  const nodePointerAreaPaint = useCallback((node, color, ctx) => {
+    const radius = (node.risk_score ?? 0) > 0.7 ? 10 : 7
+    ctx.beginPath()
+    ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI)
+    ctx.fillStyle = color
+    ctx.fill()
+  }, [])
 
   const hasGraph = graphData.nodes.length > 0
 
   // Render
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", background: C.bg, color: C.text, overflow: "hidden" }}>
+    <div style={{ display: "flex", height: "100vh", width: "100vw", background: C.bg, color: C.green, overflow: "hidden" }}>
 
-      {/* LEFT: Graph Canvas */}
+      {/* ═══════ FAR LEFT: Live Transactions Panel ═══════ */}
+      <div style={{
+        width: 280, height: "100vh", borderRight: `1px solid ${C.border}`,
+        display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
+        background: C.panel
+      }}>
+        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13 }}>⚡</span>
+          <span style={{ fontSize: 11, color: C.muted, letterSpacing: 1, fontWeight: 600 }}>LIVE TRANSACTIONS</span>
+          <span style={{
+            marginLeft: "auto", fontSize: 9, padding: "2px 8px", borderRadius: 10,
+            background: C.green + "18", color: C.green, fontWeight: 600
+          }}>LIVE</span>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", minHeight: 0 }}>
+          {feed.map((ev, i) => (
+            <div key={i} onClick={() => investigateAccount(ev.dst)}
+              style={{
+                padding: "8px 10px", marginBottom: 4, borderRadius: 8,
+                background: ev.flagged ? C.red + "0d" : C.card,
+                border: ev.flagged ? `1px solid ${C.red}22` : "1px solid transparent",
+                fontSize: 11, cursor: "pointer", transition: "all 0.15s"
+              }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span className="mono" style={{ color: ev.flagged ? "#fca5a5" : C.muted, fontSize: 10, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {ev.src} → {ev.dst}
+                </span>
+                <span style={{ color: ev.flagged ? C.red : C.mint, fontSize: 10, fontWeight: 600 }}>
+                  {ev.flagged ? "⚠" : "✓"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, color: C.dim, fontSize: 10 }}>
+                <span>${ev.amount?.toLocaleString()}</span>
+                <span>{ev.type}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* CENTER: Graph Canvas */}
       <div style={{ flex: 1, position: "relative", height: "100vh", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ position: "absolute", top: 20, left: 24, zIndex: 10, display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 8,
-            background: `linear-gradient(135deg, ${C.green}, #008c32)`,
+            background: "linear-gradient(135deg, #0a7a33, #00b050)",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontWeight: 800, fontSize: 14, color: "white", letterSpacing: -1
           }}>TD</div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: 1 }}>Argus</h1>
+            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.green, letterSpacing: 1 }}>Argus</h1>
             <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>AML Investigation Dashboard</div>
           </div>
         </div>
@@ -190,7 +305,7 @@ export default function App() {
           background: C.panel + "cc", borderRadius: 8, padding: "6px 14px",
           border: `1px solid ${C.border}`, backdropFilter: "blur(8px)"
         }}>
-          <span style={{ color: C.green }}>● Selected</span>
+          <span style={{ color: C.text }}>● Selected</span>
           <span style={{ color: C.red }}>● High Risk</span>
           <span style={{ color: C.amber }}>● Medium</span>
           <span style={{ color: C.mint }}>● Low</span>
@@ -201,10 +316,10 @@ export default function App() {
           <div style={{
             position: "absolute", bottom: 20, left: 24, zIndex: 10,
             background: C.panel + "ee", borderRadius: 10, padding: "10px 16px",
-            border: `1px solid ${C.green}33`, backdropFilter: "blur(12px)",
+            border: `1px solid ${C.text}33`, backdropFilter: "blur(12px)",
             display: "flex", gap: 20, alignItems: "center", fontSize: 11
           }}>
-            <span style={{ color: C.green, fontWeight: 600 }}>◈ INVESTIGATING</span>
+            <span style={{ color: C.text, fontWeight: 600 }}>◈ INVESTIGATING</span>
             <span className="mono" style={{ color: C.text }}>{selectedAccount}</span>
             <span style={{ color: C.muted }}>{graphData.nodes.length} accounts</span>
             <span style={{ color: C.muted }}>{graphData.links.length} transactions</span>
@@ -239,9 +354,8 @@ export default function App() {
           <ForceGraph2D
             ref={graphRef}
             graphData={graphData}
-            nodeColor={nodeColor}
-            nodeVal={nodeVal}
-            nodeRelSize={4}
+            nodeCanvasObject={nodeCanvasObject}
+            nodePointerAreaPaint={nodePointerAreaPaint}
             linkColor={linkColor}
             linkWidth={linkWidth}
             linkDirectionalArrowLength={6}
@@ -273,9 +387,9 @@ export default function App() {
               style={{
                 flex: 1, padding: "12px 0", fontSize: 11, fontWeight: 600,
                 letterSpacing: 0.5, cursor: "pointer",
-                background: rightTab === key ? C.green + "15" : "transparent",
-                color: rightTab === key ? C.green : C.muted,
-                border: "none", borderBottom: rightTab === key ? `2px solid ${C.green}` : "2px solid transparent",
+                background: rightTab === key ? C.text + "15" : "transparent",
+                color: rightTab === key ? C.text : C.muted,
+                border: "none", borderBottom: rightTab === key ? `2px solid ${C.text}` : "2px solid transparent",
                 transition: "all 0.2s"
               }}>
               {label}
@@ -296,12 +410,12 @@ export default function App() {
                 style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   padding: "9px 12px", marginBottom: 4, borderRadius: 8,
-                  background: selectedAccount === a.account_id ? C.green + "15" : C.card,
-                  border: selectedAccount === a.account_id ? `1px solid ${C.green}55` : "1px solid transparent",
+                  background: selectedAccount === a.account_id ? C.text + "15" : C.card,
+                  border: selectedAccount === a.account_id ? `1px solid ${C.text}55` : "1px solid transparent",
                   cursor: "pointer", fontSize: 12, transition: "all 0.15s"
                 }}
-                onMouseEnter={e => { if(selectedAccount !== a.account_id) e.currentTarget.style.borderColor = C.red + "44" }}
-                onMouseLeave={e => { if(selectedAccount !== a.account_id) e.currentTarget.style.borderColor = "transparent" }}
+                onMouseEnter={e => { if (selectedAccount !== a.account_id) e.currentTarget.style.borderColor = C.red + "44" }}
+                onMouseLeave={e => { if (selectedAccount !== a.account_id) e.currentTarget.style.borderColor = "transparent" }}
               >
                 <span className="mono" style={{ color: C.muted, fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {a.account_id}
@@ -309,33 +423,6 @@ export default function App() {
                 <span style={{ color: a.risk_score > 0.85 ? C.red : C.amber, fontWeight: 700 }}>
                   {(a.risk_score * 100).toFixed(0)}%
                 </span>
-              </div>
-            ))}
-
-            {/* Live Feed */}
-            <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1, marginTop: 20, marginBottom: 10, fontWeight: 600 }}>
-              ⚡ LIVE TRANSACTIONS
-            </div>
-            {feed.map((ev, i) => (
-              <div key={i} onClick={() => investigateAccount(ev.dst)}
-                style={{
-                  padding: "8px 10px", marginBottom: 4, borderRadius: 8,
-                  background: ev.flagged ? C.red + "0d" : C.card,
-                  border: ev.flagged ? `1px solid ${C.red}22` : "1px solid transparent",
-                  fontSize: 11, cursor: "pointer", transition: "all 0.15s"
-                }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="mono" style={{ color: ev.flagged ? "#fca5a5" : C.muted, fontSize: 10, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {ev.src} → {ev.dst}
-                  </span>
-                  <span style={{ color: ev.flagged ? C.red : C.mint, fontSize: 10, fontWeight: 600 }}>
-                    {ev.flagged ? "⚠" : "✓"}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, color: C.dim, fontSize: 10 }}>
-                  <span>${ev.amount?.toLocaleString()}</span>
-                  <span>{ev.type} · {ev.timestamp}</span>
-                </div>
               </div>
             ))}
           </>}
@@ -356,7 +443,7 @@ export default function App() {
                 onMouseLeave={e => e.currentTarget.style.borderColor = "transparent"}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontWeight: 700, fontSize: 13, color: C.amber }}>{c.id || `R-${i+1}`}</span>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: C.amber }}>{c.id || `R-${i + 1}`}</span>
                   <span style={{ fontSize: 11, color: C.muted }}>{c.size} accounts</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
@@ -421,7 +508,7 @@ function ProfileCard({ profile, type }) {
   let currentKey = null
   for (const line of lines) {
     const match = line.match(/^([A-Z ]+):(.*)/)
-    if (match && ["TYPOLOGY","SEVERITY","SUMMARY","RED FLAGS","OBSERVATIONS","TRANSACTION PATTERN","STRUCTURAL PATTERN","CONNECTED ENTITIES","RECOMMENDED ACTION"].includes(match[1].trim())) {
+    if (match && ["TYPOLOGY", "SEVERITY", "SUMMARY", "RED FLAGS", "OBSERVATIONS", "TRANSACTION PATTERN", "STRUCTURAL PATTERN", "CONNECTED ENTITIES", "RECOMMENDED ACTION"].includes(match[1].trim())) {
       currentKey = match[1].trim()
       sections[currentKey] = match[2].trim()
     } else if (currentKey) {
@@ -480,8 +567,8 @@ function ProfileCard({ profile, type }) {
       {sections["TYPOLOGY"] && (
         <div style={{
           display: "inline-block", padding: "4px 12px", borderRadius: 6,
-          background: C.green + "15", color: C.green, fontSize: 11, fontWeight: 600,
-          marginBottom: 12, border: `1px solid ${C.green}33`
+          background: C.text + "15", color: C.text, fontSize: 11, fontWeight: 600,
+          marginBottom: 12, border: `1px solid ${C.text}33`
         }}>
           {sections["TYPOLOGY"].trim()}
         </div>
