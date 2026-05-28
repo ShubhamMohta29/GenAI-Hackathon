@@ -8,7 +8,7 @@ Sponsored Prize Category: TD
 
 ## Demo
 
-> Select any account from the **Alerts** panel or a ring from **Clusters** to visualize its transaction network and generate an AI investigation report.
+> On load, the dashboard shows a live overview graph of the highest-value flagged transactions across the dataset. Click any node, any account from the **Alerts** panel, or any ring from **Clusters** to drill into its 1-hop transaction network and generate an AI investigation report.
 
 ---
 
@@ -16,8 +16,8 @@ Sponsored Prize Category: TD
 
 1. **Data** — Uses the [PaySim dataset](https://www.kaggle.com/datasets/ealaxi/paysim1) (~6M simulated mobile money transactions).
 2. **GNN Model** — A 3-layer GraphSAGE network trained on the transaction graph to assign a fraud risk score (0–1) to every account node.
-3. **Backend** — A FastAPI server loads the pre-computed risk scores and the PaySim CSV at startup. It serves account graphs, risk tiers, and suspicious cluster data — no database required.
-4. **AI Reports** — Google Gemini 2.5 Flash generates structured Suspicious Activity Reports (SARs) for any account or cluster, citing exact dollar amounts and timestamps.
+3. **Backend** — A FastAPI server loads the pre-computed risk scores and the PaySim CSV at startup. It serves an overview fraud graph, per-account graphs, risk tiers, and suspicious cluster data — no database required.
+4. **AI Reports** — Google Gemini 2.5 Flash Lite generates structured Suspicious Activity Reports (SARs) for any account or cluster, citing exact dollar amounts and timestamps.
 5. **Frontend** — A React + Vite dashboard renders the live transaction graph using `react-force-graph-2d`, with a real-time WebSocket feed of incoming transactions.
 
 ---
@@ -26,25 +26,29 @@ Sponsored Prize Category: TD
 
 ```
 GenAI-Hackathon/
-├── data/
-│   ├── generate_data.py        # Kaggle dataset downloader
-│   └── raw_data/               # PaySim CSV goes here (not in git)
-├── model/
-│   ├── dataset.py              # Builds PyTorch Geometric graph from CSV
-│   ├── gnn.py                  # FraudGNN model definition (GraphSAGE)
-│   ├── train.py                # Training script
-│   ├── fraud_gnn.pt            # Trained model weights (not in git)
-│   └── scores.json             # Pre-computed risk scores (not in git)
 ├── backend/
-│   └── app.py                  # FastAPI server
+│   ├── api/
+│   │   └── main.py             # FastAPI server
+│   ├── data/
+│   │   ├── generate_data.py    # Kaggle dataset downloader
+│   │   └── raw_data/           # PaySim CSV goes here (not in git)
+│   ├── graph/
+│   │   └── neo4j_loader.py     # Optional Neo4j graph loader
+│   ├── model/
+│   │   ├── dataset.py          # Builds PyTorch Geometric graph from CSV
+│   │   ├── gnn.py              # FraudGNN model definition (GraphSAGE)
+│   │   ├── train.py            # Training script
+│   │   ├── fraud_gnn.pt        # Trained model weights (not in git)
+│   │   └── scores.json         # Pre-computed risk scores (not in git)
+│   ├── .env                    # API keys (not in git)
+│   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx             # Main dashboard component
 │   │   ├── main.jsx
 │   │   └── index.css
 │   └── package.json
-├── .env                        # API keys (not in git)
-├── .gitignore
+├── .env.example
 └── README.md
 ```
 
@@ -64,12 +68,12 @@ GenAI-Hackathon/
 ```bash
 git clone https://github.com/your-username/GenAI-Hackathon.git
 cd GenAI-Hackathon
-pip install fastapi uvicorn pandas networkx torch torch-geometric scikit-learn google-genai python-dotenv
+pip install -r backend/requirements.txt
 ```
 
 ### 2. Set up environment variables
 
-Create a `.env` file in the project root:
+Create a `backend/.env` file (see `.env.example` for the template):
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -78,7 +82,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 ### 3. Download the dataset
 
 ```bash
-cd data
+cd backend/data
 python generate_data.py
 ```
 
@@ -87,7 +91,7 @@ This downloads and extracts the PaySim CSV from Kaggle into `data/raw_data/`.
 ### 4. Train the GNN (or skip if weights are provided)
 
 ```bash
-cd model
+cd backend/model
 python train.py
 ```
 
@@ -100,11 +104,11 @@ This trains for 200 epochs and outputs:
 ### 5. Start the backend
 
 ```bash
-cd backend
-uvicorn app:app --host 0.0.0.0 --port 8000
+cd backend/api
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-The server loads `scores.json` and the CSV at startup. First boot takes ~30 seconds.
+The server loads `scores.json` and the CSV at startup, then pre-computes risk tiers, suspicious clusters, and the overview graph. First boot takes ~30–60 seconds.
 
 ### 6. Start the frontend
 
@@ -145,6 +149,7 @@ Make sure port `8000` is allowed through the host machine's firewall.
 | `GET` | `/accounts/high` | All accounts with risk > 0.7 |
 | `GET` | `/accounts/medium` | All accounts with risk 0.4–0.7 |
 | `GET` | `/accounts/low` | Count of low-risk accounts |
+| `GET` | `/graph/overview` | Pre-computed graph of top 400 fraud transactions (dashboard default) |
 | `GET` | `/graph/{account_id}` | 1-hop transaction network for an account |
 | `GET` | `/profile/{account_id}` | AI-generated SAR for an account |
 | `GET` | `/rings` | Top 20 suspicious transaction clusters |
@@ -158,7 +163,7 @@ Make sure port `8000` is allowed through the host machine's firewall.
 | Layer | Technology |
 |-------|-----------|
 | ML Model | PyTorch, PyTorch Geometric (GraphSAGE) |
-| AI Reports | Google Gemini 2.5 Flash |
+| AI Reports | Google Gemini 2.5 Flash Lite |
 | Backend | FastAPI, Pandas, NetworkX |
 | Frontend | React, Vite, react-force-graph-2d |
 | Dataset | PaySim (Kaggle) |
@@ -169,10 +174,10 @@ Make sure port `8000` is allowed through the host machine's firewall.
 
 The following are excluded via `.gitignore` due to size or sensitivity:
 
-- `model/fraud_gnn.pt` — trained model weights (~MB)
-- `model/scores.json` — 9M account risk scores (~large)
-- `data/raw_data/` — PaySim CSV (~500MB)
-- `.env` — API keys
+- `backend/model/fraud_gnn.pt` — trained model weights
+- `backend/model/scores.json` — 9M account risk scores (~large)
+- `backend/data/raw_data/` — PaySim CSV (~500MB)
+- `backend/.env` — API keys
 
 ---
 

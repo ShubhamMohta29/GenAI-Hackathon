@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import ForceGraph2D from "react-force-graph-2d"
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, '')
 const API = API_BASE
 const WS = API_BASE.replace("http", "ws") + "/ws/live"
 
@@ -36,14 +36,15 @@ export default function App() {
   const [accountProfile, setAccountProfile] = useState(null)
   const [clusterProfile, setClusterProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
-  const [graphLoading, setGraphLoading] = useState(false)
+  const [graphLoading, setGraphLoading] = useState(true)
   const [rightTab, setRightTab] = useState("alerts")
 
   const wsRef = useRef(null)
   const graphRef = useRef(null)
+  const overviewGraphRef = useRef({ nodes: [], links: [] })
 
   const clearInvestigation = useCallback(() => {
-    setGraphData({ nodes: [], links: [] })
+    setGraphData(overviewGraphRef.current)
     setSelectedAccount(null)
     setHighlightNodes(new Set())
     setAccountProfile(null)
@@ -67,6 +68,26 @@ export default function App() {
     const headers = { "ngrok-skip-browser-warning": "true" }
     fetch(`${API}/alerts`, { headers }).then(r => r.json()).then(setAlerts)
     fetch(`${API}/rings`, { headers }).then(r => r.json()).then(d => setClusters(d.rings || []))
+
+    // Load overview graph (top fraud transactions) on startup
+    fetch(`${API}/graph/overview`, { headers })
+      .then(r => r.json())
+      .then(d => {
+        const nodes = d.nodes.map(n => ({ ...n, id: n.id }))
+        const links = d.edges.map(e => ({
+          source: e.src, target: e.dst,
+          amount: e.amount, is_fraud: e.is_fraud,
+          timestamp: e.timestamp, tx_type: e.tx_type,
+        }))
+        const g = { nodes, links }
+        overviewGraphRef.current = g
+        setGraphData(g)
+        setGraphLoading(false)
+        setTimeout(() => {
+          if (graphRef.current) graphRef.current.zoomToFit(800, 40)
+        }, 1200)
+      })
+      .catch(() => setGraphLoading(false))
 
     wsRef.current = new WebSocket(WS)
     wsRef.current.onmessage = (e) => {
@@ -314,12 +335,14 @@ export default function App() {
 
         {hasGraph && (
           <div className="graph-info-bar">
-            {selectedAccount && (
+            {selectedAccount ? (
               <>
                 <span style={{ fontWeight: 600, color: "var(--layout-text)" }}>Investigating</span>
                 <span className="mono" style={{ color: "var(--layout-text)" }}>{selectedAccount}</span>
               </>
-            )}
+            ) : !clusterProfile ? (
+              <span style={{ color: "var(--layout-text-tertiary)" }}>Overview — top fraud transactions</span>
+            ) : null}
             <span>{graphData.nodes.length} accounts</span>
             <span>{graphData.links.length} transactions</span>
             {showSarButton && (
@@ -333,15 +356,17 @@ export default function App() {
                 SAR report
               </button>
             )}
-            <button
-              type="button"
-              className="graph-info-bar-close"
-              onClick={clearInvestigation}
-              title="Clear and return to overview"
-              aria-label="Close investigation"
-            >
-              Close
-            </button>
+            {(selectedAccount || clusterProfile) && (
+              <button
+                type="button"
+                className="graph-info-bar-close"
+                onClick={clearInvestigation}
+                title="Return to overview"
+                aria-label="Close investigation"
+              >
+                Close
+              </button>
+            )}
           </div>
         )}
 

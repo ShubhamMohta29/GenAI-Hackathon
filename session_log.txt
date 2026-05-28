@@ -1,0 +1,124 @@
+================================================================================
+ARGUS — Session Log
+================================================================================
+Format: [DATE] [BRANCH] — Summary of work done / decisions made
+================================================================================
+
+[2026-05-28] [Shubham] — Initial project audit & documentation
+  - Read entire codebase: backend/api/main.py, model/gnn.py, model/train.py,
+    model/dataset.py, frontend/src/App.jsx, index.css, package.json,
+    requirements.txt, README.md, HackathonWriteUp.md, .env.example,
+    backend/.env, docker-compose.yml, generate_data.py, graph_builder.py,
+    neo4j_loader.py
+  - Created index.txt: full project map, status, bugs, roadmap
+  - Created session_log.txt (this file)
+  - Found: backend/model/train.py has uncommitted modifications (git status: M)
+  - Found: docker-compose.yml is empty
+  - Found: App.css is Vite default boilerplate (should be cleaned)
+  - Found: Neo4j integration is dead code (not wired into main API)
+  - Found: GEMINI_API_KEY is in plaintext in backend/.env
+  - Found: VITE_API_URL in frontend/.env points to dead hackathon ngrok URL
+  - Found: scores.json only covers ~50k sampled accounts, not 9M as claimed
+  - Identified 8 bugs documented in index.txt
+
+================================================================================
+ROADMAP — Prioritized
+================================================================================
+
+PRIORITY 1 — Fix blockers (required to run app reliably)
+--------------------------------------------------------------------------------
+[ ] 1a. Fix frontend/.env VITE_API_URL → http://localhost:8000
+         (currently points to dead ngrok hackathon URL)
+
+[ ] 1b. Review and commit (or discard) train.py changes on Shubham branch
+         (file is modified but not committed)
+
+[ ] 1c. Fix FastAPI route ordering: move /profile/ring/{ring_id} BEFORE
+         /profile/{account_id} in backend/api/main.py to prevent route
+         conflict (line 277 vs line 179)
+
+PRIORITY 2 — Security & cleanup
+--------------------------------------------------------------------------------
+[ ] 2a. Rotate GEMINI_API_KEY — the key in backend/.env may have been exposed.
+         Generate a new one at aistudio.google.com and update backend/.env
+
+[ ] 2b. Clean App.css — remove Vite boilerplate (hero, ticks, counter classes).
+         The actual CSS lives in index.css; App.css is just noise.
+
+[ ] 2c. Delete dead code:
+         - backend/data/graph_builder.py (duplicate of model/dataset.py)
+         - backend/graph/neo4j_loader.py (unless Neo4j is planned — see 4a)
+         - Remove neo4j from requirements.txt if not using it
+
+[ ] 2d. Fix wrong dotenv path in neo4j_loader.py (if keeping):
+         Line 11: load_dotenv("../data/.env") → load_dotenv("../../.env")
+
+PRIORITY 3 — Core feature improvements
+--------------------------------------------------------------------------------
+[ ] 3a. Fix score coverage gap: run train.py on FULL dataset (remove
+         sample_size=100000 in train.py line 15 and dataset.py line 24).
+         This makes scores.json cover all ~9M accounts as the README claims.
+         Warning: full training may take hours on CPU.
+
+[ ] 3b. Add account search in frontend:
+         - Add a search input to the right panel (alerts tab)
+         - Call GET /graph/{account_id} + GET /profile/{account_id} on submit
+         - Currently users can only explore top 15 alerts
+
+[ ] 3c. Add rate limiting / caching on /profile/* endpoints:
+         - Gemini calls are slow (~2-5s) and could be hammered
+         - Cache SAR responses by account_id in a dict at startup or use
+           functools.lru_cache on a sync wrapper
+
+[ ] 3d. Add proper error handling in React:
+         - investigateAccount and investigateCluster catch blocks are empty
+         - Add user-visible error state when API calls fail
+
+PRIORITY 4 — Infrastructure / deployment
+--------------------------------------------------------------------------------
+[ ] 4a. Decision: Neo4j or not?
+         Option A: Remove all Neo4j code (graph_builder.py, neo4j_loader.py,
+                   neo4j dep in requirements.txt, NEO4J_* from .env.example)
+         Option B: Wire Neo4j into the API — replace pandas graph queries
+                   with Cypher queries for much faster graph lookup
+                   (would need docker-compose.yml with neo4j service)
+
+[ ] 4b. Write docker-compose.yml:
+         Services needed:
+         - api: builds from backend/, port 8000
+         - frontend: builds from frontend/, port 5173 (or nginx for prod)
+         - neo4j: only if 4a → Option B
+
+[ ] 4c. Add Dockerfile for backend:
+         FROM python:3.12-slim
+         COPY requirements.txt .
+         RUN pip install -r requirements.txt
+         COPY . .
+         CMD ["uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+[ ] 4d. Deploy frontend to Vercel or Netlify (static build via npm run build)
+
+[ ] 4e. Deploy backend to Railway or Render (free tier should handle it)
+         Note: PaySim CSV is 500MB — startup memory will be heavy.
+         Consider pre-filtering/indexing at build time.
+
+PRIORITY 5 — Polish & stretch goals
+--------------------------------------------------------------------------------
+[ ] 5a. Account pagination: /accounts/high and /accounts/medium return top 200.
+         Add ?page=N&limit=50 query params.
+
+[ ] 5b. Graph cluster view: when investigating a cluster, show combined graph
+         from all member accounts (currently only fetches graph for accounts[0])
+
+[ ] 5c. Timestamp on live feed: show relative time (e.g., "2s ago") for each
+         live transaction card instead of static PaySim step timestamp.
+
+[ ] 5d. Export SAR: add a "Download as PDF/TXT" button in the Report panel.
+
+[ ] 5e. Unit tests: add pytest tests for at least the core endpoints
+         (/alerts, /graph/{id}, /rings). Currently zero test coverage.
+
+[ ] 5f. Review google-genai version: requirements.txt pins 0.1.0, which is
+         very early. Check if a newer version is stable and upgrade.
+
+================================================================================

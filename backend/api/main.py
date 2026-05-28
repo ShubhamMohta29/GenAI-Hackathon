@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 # Load environment
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 app = FastAPI(title="Fraud Graph Monitor API")
 
@@ -105,7 +105,37 @@ for i, r in enumerate(RINGS):
 print(f"Found {len(RINGS)} suspicious clusters.")
 
 
+# Pre-compute overview graph (top 400 fraud transactions by amount — capped for browser perf)
+print("Building overview graph...")
+_ov_tx = DF[DF["isFraud"] == 1].nlargest(400, "amount")
+_ov_node_ids = list(set(_ov_tx["nameOrig"].tolist()) | set(_ov_tx["nameDest"].tolist()))
+OVERVIEW_GRAPH = {
+    "nodes": [
+        {"id": nid, "is_fraud": SCORES.get(nid, 0.0) > 0.7, "risk_score": SCORES.get(nid, 0.0)}
+        for nid in _ov_node_ids
+    ],
+    "edges": [
+        {
+            "src": r["nameOrig"],
+            "dst": r["nameDest"],
+            "amount": round(float(r["amount"]), 2),
+            "is_fraud": bool(r["isFraud"]),
+            "timestamp": step_to_timestamp(r["step"]),
+            "tx_type": r["type"],
+        }
+        for _, r in _ov_tx.iterrows()
+    ],
+}
+print(f"Overview graph ready: {len(OVERVIEW_GRAPH['nodes'])} nodes, {len(OVERVIEW_GRAPH['edges'])} edges.")
+
+
 # ENDPOINTS
+@app.get("/graph/overview")
+def get_overview_graph():
+    """Pre-computed graph of the top 400 fraud transactions — shown on dashboard load."""
+    return OVERVIEW_GRAPH
+
+
 @app.get("/graph/{account_id}")
 def get_account_graph(account_id: str):
     """Return the 1-hop neighborhood graph for a single account."""

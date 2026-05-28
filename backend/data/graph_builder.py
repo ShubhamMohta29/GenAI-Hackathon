@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
-import pandas as pd
 from generate_data import DATA_DIR, DATASET, get_kaggle_dataset
 
 def build_pyg_graph(sample_size=None):
