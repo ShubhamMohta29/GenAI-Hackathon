@@ -205,105 +205,6 @@ def get_suspicious_clusters():
     return {"total_rings": len(RINGS), "rings": RINGS[:20]}
 
 
-@app.get("/profile/{account_id}")
-async def get_account_profile(account_id: str):
-    """Generate an AI-powered fraud investigation profile using Google Gemini."""
-    risk_score = SCORES.get(account_id, None)
-    if risk_score is None:
-        return {"error": f"Account {account_id} not found in scores."}
-
-    # Pull all transactions for this account from the CSV
-    sent = DF[DF["nameOrig"] == account_id]
-    received = DF[DF["nameDest"] == account_id]
-
-    # Build transaction summary
-    summary_lines = [
-        f"Account ID: {account_id}",
-        f"GNN Risk Score: {risk_score:.4f}",
-        f"Risk Tier: {'HIGH' if risk_score > 0.7 else 'MEDIUM' if risk_score > 0.4 else 'LOW'}",
-        f"",
-        f"OUTGOING TRANSACTIONS ({len(sent)} total):",
-        f"  Total sent: ${sent['amount'].sum():,.2f}" if len(sent) > 0 else "  No outgoing transactions",
-        f"  Avg amount: ${sent['amount'].mean():,.2f}" if len(sent) > 0 else "",
-        f"  Transaction types: {dict(sent['type'].value_counts())}" if len(sent) > 0 else "",
-        f"  Recipients: {sent['nameDest'].nunique()} unique accounts" if len(sent) > 0 else "",
-        f"",
-        f"INCOMING TRANSACTIONS ({len(received)} total):",
-        f"  Total received: ${received['amount'].sum():,.2f}" if len(received) > 0 else "  No incoming transactions",
-        f"  Avg amount: ${received['amount'].mean():,.2f}" if len(received) > 0 else "",
-        f"  Transaction types: {dict(received['type'].value_counts())}" if len(received) > 0 else "",
-        f"  Senders: {received['nameOrig'].nunique()} unique accounts" if len(received) > 0 else "",
-        f"",
-        f"FRAUD FLAGS IN RAW DATA:",
-        f"  Outgoing flagged as fraud: {int(sent['isFraud'].sum())}" if len(sent) > 0 else "  None",
-        f"  Incoming flagged as fraud: {int(received['isFraud'].sum())}" if len(received) > 0 else "  None",
-    ]
-
-    # Top 5 largest transactions
-    all_tx = pd.concat([
-        sent[["nameDest", "amount", "type", "isFraud", "step"]].rename(columns={"nameDest": "counterparty"}).assign(direction="SENT"),
-        received[["nameOrig", "amount", "type", "isFraud", "step"]].rename(columns={"nameOrig": "counterparty"}).assign(direction="RECEIVED"),
-    ])
-    if len(all_tx) > 0:
-        top5 = all_tx.nlargest(5, "amount")
-        summary_lines.append("")
-        summary_lines.append("TOP 5 LARGEST TRANSACTIONS:")
-        for _, tx in top5.iterrows():
-            flag = " ⚠ FRAUD" if tx["isFraud"] else ""
-            summary_lines.append(
-                f"  [{step_to_timestamp(tx['step'])}] {tx['direction']} ${tx['amount']:,.2f} ({tx['type']}) → {tx['counterparty']}{flag}"
-            )
-
-    transaction_summary = "\n".join(summary_lines)
-
-    # Send to Gemini for analysis
-    prompt = f"""You are a fraud analyst at TD Bank. Generate a concise Suspicious Activity Report (SAR) 
-for the following account flagged by our GNN fraud detection system.
-
-{transaction_summary}
-
-Respond in EXACTLY this format (keep each section SHORT — 1-2 lines max, bullets max 8 words each):
-
-TYPOLOGY: [One of: Money Mule | Layering | Smurfing | Shell Account | Bust-Out | Clean]
-SEVERITY: [CRITICAL / HIGH / MEDIUM / LOW]
-SUMMARY: [One sentence, max 20 words, explaining the core suspicion]
-
-RED FLAGS:
-• [flag 1]
-• [flag 2]
-• [flag 3]
-(max 5 flags)
-
-TRANSACTION PATTERN: [2-3 sentences describing the money flow. **You MUST mention the exact dates/times or time elapsed between these transactions.**]. Decide accuracy (exact minute,hour or day dependingon relevancy)
-
-CONNECTED ENTITIES: [List key counterparty account IDs and their role]
-
-RECOMMENDED ACTION: [One specific next step]
-
-Be specific — cite dollar amounts and account IDs from the data. No filler text.
-If the account is clean (low risk, no flags), state: "No suspicious activity detected." and stop."""
-
-    try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=prompt,
-        )
-        profile_text = response.text
-    except Exception as e:
-        profile_text = f"Error generating profile: {str(e)}"
-
-    return {
-        "account_id": account_id,
-        "risk_score": risk_score,
-        "risk_tier": "HIGH" if risk_score > 0.7 else "MEDIUM" if risk_score > 0.4 else "LOW",
-        "transactions_sent": len(sent),
-        "transactions_received": len(received),
-        "total_sent": round(float(sent["amount"].sum()), 2) if len(sent) > 0 else 0,
-        "total_received": round(float(received["amount"].sum()), 2) if len(received) > 0 else 0,
-        "profile": profile_text,
-    }
-
-
 @app.get("/profile/ring/{ring_id}")
 async def get_ring_profile(ring_id: str):
     """Generate an AI-powered multi-entity investigation report."""
@@ -370,6 +271,101 @@ Be specific, cite dollar amounts and account IDs. Use objective, non-determinist
         "ring_id": ring_id,
         "accounts": account_ids,
         "total_amount": ring["total_amount"],
+        "profile": profile_text,
+    }
+
+
+@app.get("/profile/{account_id}")
+async def get_account_profile(account_id: str):
+    """Generate an AI-powered fraud investigation profile using Google Gemini."""
+    risk_score = SCORES.get(account_id, None)
+    if risk_score is None:
+        return {"error": f"Account {account_id} not found in scores."}
+
+    sent = DF[DF["nameOrig"] == account_id]
+    received = DF[DF["nameDest"] == account_id]
+
+    summary_lines = [
+        f"Account ID: {account_id}",
+        f"GNN Risk Score: {risk_score:.4f}",
+        f"Risk Tier: {'HIGH' if risk_score > 0.7 else 'MEDIUM' if risk_score > 0.4 else 'LOW'}",
+        f"",
+        f"OUTGOING TRANSACTIONS ({len(sent)} total):",
+        f"  Total sent: ${sent['amount'].sum():,.2f}" if len(sent) > 0 else "  No outgoing transactions",
+        f"  Avg amount: ${sent['amount'].mean():,.2f}" if len(sent) > 0 else "",
+        f"  Transaction types: {dict(sent['type'].value_counts())}" if len(sent) > 0 else "",
+        f"  Recipients: {sent['nameDest'].nunique()} unique accounts" if len(sent) > 0 else "",
+        f"",
+        f"INCOMING TRANSACTIONS ({len(received)} total):",
+        f"  Total received: ${received['amount'].sum():,.2f}" if len(received) > 0 else "  No incoming transactions",
+        f"  Avg amount: ${received['amount'].mean():,.2f}" if len(received) > 0 else "",
+        f"  Transaction types: {dict(received['type'].value_counts())}" if len(received) > 0 else "",
+        f"  Senders: {received['nameOrig'].nunique()} unique accounts" if len(received) > 0 else "",
+        f"",
+        f"FRAUD FLAGS IN RAW DATA:",
+        f"  Outgoing flagged as fraud: {int(sent['isFraud'].sum())}" if len(sent) > 0 else "  None",
+        f"  Incoming flagged as fraud: {int(received['isFraud'].sum())}" if len(received) > 0 else "  None",
+    ]
+
+    all_tx = pd.concat([
+        sent[["nameDest", "amount", "type", "isFraud", "step"]].rename(columns={"nameDest": "counterparty"}).assign(direction="SENT"),
+        received[["nameOrig", "amount", "type", "isFraud", "step"]].rename(columns={"nameOrig": "counterparty"}).assign(direction="RECEIVED"),
+    ])
+    if len(all_tx) > 0:
+        top5 = all_tx.nlargest(5, "amount")
+        summary_lines.append("")
+        summary_lines.append("TOP 5 LARGEST TRANSACTIONS:")
+        for _, tx in top5.iterrows():
+            flag = " ⚠ FRAUD" if tx["isFraud"] else ""
+            summary_lines.append(
+                f"  [{step_to_timestamp(tx['step'])}] {tx['direction']} ${tx['amount']:,.2f} ({tx['type']}) → {tx['counterparty']}{flag}"
+            )
+
+    transaction_summary = "\n".join(summary_lines)
+
+    prompt = f"""You are a fraud analyst at TD Bank. Generate a concise Suspicious Activity Report (SAR)
+for the following account flagged by our GNN fraud detection system.
+
+{transaction_summary}
+
+Respond in EXACTLY this format (keep each section SHORT — 1-2 lines max, bullets max 8 words each):
+
+TYPOLOGY: [One of: Money Mule | Layering | Smurfing | Shell Account | Bust-Out | Clean]
+SEVERITY: [CRITICAL / HIGH / MEDIUM / LOW]
+SUMMARY: [One sentence, max 20 words, explaining the core suspicion]
+
+RED FLAGS:
+• [flag 1]
+• [flag 2]
+• [flag 3]
+(max 5 flags)
+
+TRANSACTION PATTERN: [2-3 sentences describing the money flow. **You MUST mention the exact dates/times or time elapsed between these transactions.**]. Decide accuracy (exact minute,hour or day dependingon relevancy)
+
+CONNECTED ENTITIES: [List key counterparty account IDs and their role]
+
+RECOMMENDED ACTION: [One specific next step]
+
+Be specific — cite dollar amounts and account IDs from the data. No filler text.
+If the account is clean (low risk, no flags), state: "No suspicious activity detected." and stop."""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+        )
+        profile_text = response.text
+    except Exception as e:
+        profile_text = f"Error generating profile: {str(e)}"
+
+    return {
+        "account_id": account_id,
+        "risk_score": risk_score,
+        "risk_tier": "HIGH" if risk_score > 0.7 else "MEDIUM" if risk_score > 0.4 else "LOW",
+        "transactions_sent": len(sent),
+        "transactions_received": len(received),
+        "total_sent": round(float(sent["amount"].sum()), 2) if len(sent) > 0 else 0,
+        "total_received": round(float(received["amount"].sum()), 2) if len(received) > 0 else 0,
         "profile": profile_text,
     }
 
