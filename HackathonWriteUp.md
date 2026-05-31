@@ -62,15 +62,16 @@ At its core, Argus trains a 3-layer GraphSAGE network on the PaySim dataset — 
 
 **2. Real-Time Investigation Dashboard**
 The React frontend gives analysts a live, interactive view of the fraud landscape:
-- **Alerts panel** — top 20 highest-risk accounts, ranked by GNN score, clickable to investigate
+- **Overview graph** — on load, the dashboard immediately renders a force-directed graph of the top 400 highest-value flagged transactions across the entire dataset, giving analysts an instant picture of the fraud network without needing to select anything
+- **Alerts panel** — top 20 highest-risk accounts, ranked by GNN score, clickable to drill into a 1-hop investigation graph
 - **Live feed** — a real-time WebSocket stream of simulated incoming transactions, flagging suspicious ones as they arrive
-- **Force-directed graph** — clicking any account renders its 1-hop transaction neighborhood as an interactive graph, with nodes colored by risk tier (red = high, amber = medium, green = selected, teal = low) and edges colored by fraud flag
+- **Force-directed graph** — clicking any account or node renders its 1-hop transaction neighborhood, with nodes colored by risk tier (red = high, amber = medium, white = selected, teal = low) and edges colored by fraud flag; the Close button returns to the overview
 
 **3. Suspicious Cluster Detection**
 Beyond individual accounts, Argus automatically detects *transaction rings* — groups of interconnected accounts that collectively move large sums through flagged transactions. These clusters are surfaced in the Clusters panel, ranked by total dollar volume.
 
 **4. AI-Generated Suspicious Activity Reports**
-The most innovative feature: clicking any account or cluster triggers a call to Google Gemini 2.5 Flash, which receives a structured transaction summary and returns a complete SAR in seconds. The report includes:
+The most innovative feature: clicking any account or cluster triggers a call to Google Gemini 2.5 Flash Lite, which receives a structured transaction summary and returns a complete SAR in seconds. The report includes:
 - **Typology** (Money Mule, Layering, Smurfing, Shell Account, etc.)
 - **Severity** (Critical / High / Medium / Low)
 - **Summary** — one-sentence core suspicion
@@ -85,4 +86,4 @@ Traditional fraud detection flags individual transactions. Argus flags *networks
 
 ---
 
-*Built at GenAI Genesis · 13-15 March 2026
+*Built at GenAI Genesis · 13-15 March 2026*

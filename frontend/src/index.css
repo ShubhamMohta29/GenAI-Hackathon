@@ -408,3 +408,194 @@ body {
   background: var(--layout-surface-raised);
   color: var(--layout-text-secondary);
 }
+
+/* ── Account Search ───────────────────────────────────── */
+.search-form {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--layout-border);
+}
+.search-input {
+  flex: 1;
+  padding: var(--layout-s2) var(--layout-s3);
+  font-size: 12px;
+  color: var(--layout-text);
+  background: var(--layout-surface);
+  border: none;
+  outline: none;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.search-input::placeholder {
+  color: var(--layout-text-tertiary);
+  font-family: inherit;
+}
+.search-button {
+  padding: var(--layout-s2) var(--layout-s3);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--layout-text-secondary);
+  background: var(--layout-surface-raised);
+  border: none;
+  border-left: 1px solid var(--layout-border);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.search-button:hover {
+  color: var(--layout-text);
+  background: var(--layout-border);
+}
+
+/* ── Graph info bar: Expand button ───────────────────── */
+.graph-info-bar-expand {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--layout-text-secondary);
+  background: var(--layout-surface-raised);
+  border: 1px solid var(--layout-border);
+  border-radius: var(--layout-radius);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.graph-info-bar-expand:hover:not(:disabled) {
+  color: var(--layout-text);
+  background: var(--layout-border);
+}
+.graph-info-bar-expand.expanded,
+.graph-info-bar-expand:disabled {
+  color: var(--layout-text-tertiary);
+  cursor: default;
+}
+
+/* ── Case status badges on alert cards ───────────────── */
+.status-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.status-cleared   { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+.status-escalated { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+.status-flagged   { background: rgba(239,68,68,0.15);  color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+
+/* ── Case status buttons in ProfileCard ──────────────── */
+.case-status-row {
+  display: flex;
+  gap: var(--layout-s2);
+  margin-top: var(--layout-s3);
+  padding-top: var(--layout-s3);
+  border-top: 1px solid var(--layout-border-subtle);
+}
+.case-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--layout-radius);
+  border: 1px solid var(--layout-border);
+  background: var(--layout-surface);
+  color: var(--layout-text-secondary);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.case-btn:hover { color: var(--layout-text); background: var(--layout-border); }
+.case-btn-cleared.active   { background: rgba(16,185,129,0.15); color: #10b981; border-color: rgba(16,185,129,0.4); }
+.case-btn-escalated.active { background: rgba(245,158,11,0.15); color: #f59e0b; border-color: rgba(245,158,11,0.4); }
+.case-btn-flagged.active   { background: rgba(239,68,68,0.15);  color: #ef4444; border-color: rgba(239,68,68,0.4); }
+
+/* ── Export button ───────────────────────────────────── */
+.export-button {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--layout-text-secondary);
+  background: var(--layout-surface);
+  border: 1px solid var(--layout-border);
+  border-radius: var(--layout-radius);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+  white-space: nowrap;
+}
+.export-button:hover {
+  color: var(--layout-text);
+  background: var(--layout-border);
+}
+
+/* ── Print / Export ──────────────────────────────────── */
+@media print {
+  body { background: #fff; color: #000; overflow: auto; }
+
+  /* Hide everything except the profile report */
+  .panel-left,
+  .app-header,
+  .legend,
+  .graph-info-bar,
+  main,
+  .tabs,
+  .search-form,
+  .case-status-row,
+  .export-button {
+    display: none !important;
+  }
+
+  .app { display: block; }
+
+  .panel-right {
+    width: 100% !important;
+    height: auto !important;
+    border: none !important;
+    background: #fff !important;
+  }
+
+  .panel-body {
+    overflow: visible !important;
+    padding: 24px !important;
+  }
+
+  .print-profile {
+    color: #000;
+  }
+
+  .profile-card {
+    background: #fff !important;
+    border: 1px solid #ccc !important;
+    color: #000 !important;
+  }
+
+  .profile-card-title,
+  .profile-card-value,
+  .profile-section-title,
+  .profile-body,
+  .profile-body-muted,
+  .profile-callout,
+  .profile-action {
+    color: #000 !important;
+    background: #fff !important;
+    border-color: #ccc !important;
+  }
+
+  .profile-bullets {
+    border-color: #ccc !important;
+    color: #000 !important;
+  }
+
+  .profile-badge {
+    border: 1px solid #ccc !important;
+    color: #000 !important;
+    background: #f5f5f5 !important;
+  }
+
+  /* ARGUS draft header for printed output */
+  .panel-right::before {
+    content: "ARGUS — Draft SAR  ·  Confidential";
+    display: block;
+    font-size: 10px;
+    color: #888;
+    margin-bottom: 16px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+}

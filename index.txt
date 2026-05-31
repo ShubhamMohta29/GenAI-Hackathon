@@ -1,0 +1,230 @@
+================================================================================
+ARGUS — AML Investigation Dashboard
+Project Index
+Last updated: 2026-05-29
+================================================================================
+
+--------------------------------------------------------------------------------
+WHAT THIS APP IS
+--------------------------------------------------------------------------------
+Argus is a real-time Anti-Money Laundering (AML) fraud investigation platform
+built for the GenAI Genesis Hackathon (13-15 March 2026), sponsored prize: TD.
+
+It combines a custom-trained Graph Neural Network (GraphSAGE) with Google
+Gemini AI to let fraud analysts identify suspicious accounts, visualize
+transaction networks, detect fraud rings, and generate Suspicious Activity
+Reports (SARs) — all from one dashboard.
+
+--------------------------------------------------------------------------------
+PRODUCTION / DEPLOYMENT STATUS
+--------------------------------------------------------------------------------
+Status: LOCAL ONLY — not deployed to any cloud platform
+
+Current run targets:
+  - Frontend: http://localhost:5173  (npm run dev in frontend/)
+  - Backend:  http://localhost:8000  (uvicorn backend/api/main.py:app)
+
+Docker Compose is now configured (docker-compose.yml + Dockerfiles for both
+services). Requires pre-generated scores.json and fraud_gnn.pt on the host.
+
+--------------------------------------------------------------------------------
+TECH STACK
+--------------------------------------------------------------------------------
+Layer            Technology
+-----------      ---------------------------------------------------------------
+ML Model         PyTorch 2.10, PyTorch Geometric 2.7 (GraphSAGE / SAGEConv)
+AI Reports       Google Gemini 2.5 Flash Lite (google-genai SDK v0.1.0)
+Backend          FastAPI 0.135, Uvicorn, Pandas, NetworkX, python-dotenv
+Frontend         React 19, Vite 8, react-force-graph-2d
+Dataset          PaySim (Kaggle: ealaxi/paysim1) — ~6M transactions
+Graph DB         Neo4j — REMOVED (was never integrated; all dead code deleted)
+
+--------------------------------------------------------------------------------
+PROJECT STRUCTURE
+--------------------------------------------------------------------------------
+GenAI-Hackathon/
+├── backend/
+│   ├── api/
+│   │   └── main.py              MAIN FASTAPI SERVER — all active endpoints
+│   ├── data/
+│   │   ├── generate_data.py     Kaggle downloader + CSV path resolver
+│   │   └── raw_data/            PaySim CSV goes here (gitignored, ~500MB)
+│   ├── model/
+│   │   ├── dataset.py           Builds PyG graph from CSV (used by train.py)
+│   │   ├── gnn.py               FraudGNN model definition (3-layer GraphSAGE)
+│   │   ├── train.py             Training script
+│   │   ├── fraud_gnn.pt         Trained weights (gitignored)
+│   │   └── scores.json          Pre-computed risk scores (gitignored)
+│   ├── .env                     CONTAINS LIVE API KEY — do not commit
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx              Main dashboard (single-file React component)
+│   │   ├── index.css            All layout + component CSS
+│   │   └── main.jsx             React entry point
+│   ├── Dockerfile
+│   └── package.json             React 19, Vite 8, react-force-graph-2d
+├── docker-compose.yml
+├── .env.example                 Shows GEMINI_API_KEY var only
+├── run.bat / run.sh             Launch scripts (backend + frontend)
+├── setup.bat / setup.sh         First-time setup scripts
+└── README.md
+
+--------------------------------------------------------------------------------
+API ENDPOINTS (backend/api/main.py)
+--------------------------------------------------------------------------------
+GET  /alerts                 Top 20 highest-risk accounts (risk > 0.7)
+GET  /accounts/high          All accounts risk > 0.7 (capped at 200 in response)
+GET  /accounts/medium        All accounts risk 0.4–0.7 (capped at 200)
+GET  /accounts/low           Count only of low-risk accounts (too many to list)
+GET  /graph/overview         Pre-computed graph of top 400 fraud transactions
+GET  /graph/{account_id}     1-hop transaction neighborhood (edges capped at 200)
+GET  /profile/ring/{ring_id} AI-generated SAR via Gemini for a cluster
+GET  /profile/{account_id}   AI-generated SAR via Gemini for a single account
+GET  /rings                  Top 20 suspicious transaction clusters (rings)
+WS   /ws/live                Simulated live transaction stream (2s interval)
+
+Note: /profile/ring/{ring_id} is defined BEFORE /profile/{account_id} in
+main.py to prevent FastAPI route-matching "ring" as an account_id.
+
+--------------------------------------------------------------------------------
+WHAT HAS BEEN BUILT
+--------------------------------------------------------------------------------
+[DONE] GNN model: 3-layer GraphSAGE (FraudGNN) in gnn.py
+[DONE] Training pipeline: dataset.py + train.py — trains in ~5min on 100k rows
+[DONE] Risk score export: scores.json maps account_id → fraud probability 0–1
+[DONE] FastAPI backend with all endpoints + WebSocket + overview graph endpoint
+[DONE] Startup loading: scores.json + PaySim CSV + ring detection + overview
+[DONE] Ring/cluster detection: NetworkX connected components on fraud edges
+[DONE] AI SAR generation: Gemini 2.5 Flash Lite with structured prompt
+[DONE] React dashboard: 3-panel layout (live feed | force graph | right panel)
+[DONE] Force-directed graph: react-force-graph-2d, colored by risk tier
+[DONE] Custom node renderer: canvas-based with glow, risk % badge, size scaling
+[DONE] Live transaction feed: WebSocket with real PaySim rows
+[DONE] ProfileCard component: parses structured SAR text into sections
+[DONE] Account search: search bar in right panel, calls investigateAccount()
+[DONE] Multi-hop graph expand: "Expand network" merges neighbor subgraph in-place
+[DONE] Gemini SAR caching: profileCache useRef, 5-minute TTL, skips API call
+[DONE] Case status tagging: Clear/Escalate/Flag buttons, localStorage persistence,
+        color-coded badges on alert cards
+[DONE] SAR export: "Export" button + @media print CSS → clean printable report
+[DONE] FastAPI route fix: /profile/ring/{ring_id} defined before /profile/{id}
+[DONE] Docker Compose: docker-compose.yml + backend/Dockerfile + frontend/Dockerfile
+[DONE] Setup/run scripts for Windows and Mac/Linux (Neo4j prompt removed)
+[DONE] Kaggle dataset downloader (generate_data.py)
+
+--------------------------------------------------------------------------------
+WHAT HAS NOT BEEN BUILT / IS INCOMPLETE
+--------------------------------------------------------------------------------
+[MISSING] Cloud deployment — no Vercel/Railway/Render/Heroku config
+[MISSING] Full-dataset scoring — train.py uses sample_size=100000 (100k rows),
+           scores.json covers only the sampled accounts. Accounts outside the
+           sample default to 0.0 risk (silently under-classified).
+[MISSING] Pagination for accounts/high and accounts/medium endpoints
+[MISSING] Authentication — API is fully open (CORS allow_origins=["*"])
+[MISSING] Error boundary in React — unhandled fetch failures crash silently
+[MISSING] Rate limiting on /profile/* endpoints (Gemini calls)
+
+--------------------------------------------------------------------------------
+TODO — REMAINING WORK
+--------------------------------------------------------------------------------
+HIGH VALUE — next session
+------------------------------------------------------------------------------
+[TODO] Fix full-dataset scoring
+       Remove the 100k sample cap so scores.json covers all PaySim accounts:
+       - In backend/model/train.py line 15: remove sample_size=100000
+       - In backend/model/dataset.py line 24: remove nrows=sample_size
+       - Re-run training on full ~6M rows (needs hours + RAM)
+       - Update README training note once done
+
+[TODO] "Why flagged?" explainability panel
+       The GNN risk score is a black box. Analysts need to justify decisions.
+       - Add a second Gemini call (or augment existing prompt) to produce
+         a 3-bullet "KEY RISK INDICATORS" section per account
+       - Render as a highlighted callout inside ProfileCard
+
+[TODO] Transaction timeline chart
+       Money laundering shows temporal patterns (sudden spikes, round-trips).
+       - Add a small bar or sparkline chart inside ProfileCard
+       - X-axis: transaction step (hour), Y-axis: dollar amount
+       - Color bars by direction: sent = red, received = green
+       - Library: Recharts (already React-compatible)
+       - Backend: add GET /timeline/{account_id} or extend /profile response
+
+INFRASTRUCTURE
+------------------------------------------------------------------------------
+[TODO] Cloud deployment
+       - Frontend → Vercel or Netlify (npm run build, static)
+       - Backend → Railway or Render (500MB CSV at startup is heavy;
+         consider pre-filtering or an index at build time)
+
+MEDIUM PRIORITY
+------------------------------------------------------------------------------
+[TODO] Graph filters (transaction type, amount range, risk tier)
+       - Add a filter bar above the graph
+       - Client-side filtering on graphData; no backend changes needed
+
+[TODO] Account pagination
+       - Add ?page=N&limit=50 to /accounts/high and /accounts/medium
+       - Front-end: load-more button in alerts tab
+
+================================================================================
+
+--------------------------------------------------------------------------------
+KNOWN BUGS / ISSUES (open)
+--------------------------------------------------------------------------------
+1. SECURITY: backend/.env contains a live GEMINI_API_KEY in plaintext.
+   Although gitignored, the key should be rotated if the repo was ever
+   pushed with it included.
+
+2. SCORE COVERAGE GAP: scores.json only covers the sampled 100k-row subset.
+   Accounts not in the sample get SCORES.get(account_id, 0.0) → 0.0
+   (treated as no-risk). This silently misclassifies unknown accounts.
+
+3. train.py line 15: sample_size=100000 still hardcoded. See TODO above.
+
+--------------------------------------------------------------------------------
+BUGS FIXED
+--------------------------------------------------------------------------------
+[FIXED] FastAPI routing: /profile/ring/{ring_id} now defined before
+         /profile/{account_id} — no longer fragile.
+[FIXED] App.css: cleared of Vite boilerplate.
+[FIXED] frontend/.env: removed dead Neo4j vars and GEMINI_API_KEY (wrong file).
+[FIXED] .env.example: fixed // comment syntax → #; removed dead Neo4j vars.
+[FIXED] backend/Dockerfile: uvicorn command was api/main.py:app → api.main:app.
+[FIXED] run.sh / run.bat: removed Neo4j startup prompts.
+[FIXED] .gitignore: added .idea/ entry.
+
+--------------------------------------------------------------------------------
+DEAD CODE REMOVED
+--------------------------------------------------------------------------------
+  backend/data/graph_builder.py   — duplicate of model/dataset.py
+  backend/graph/neo4j_loader.py   — never called by the API
+  client.py (root)                — queried non-existent /predict endpoint
+  neo4j==6.1.0 from requirements  — unused dependency
+  backend/model/package-lock.json — stray Node.js lockfile in Python directory
+  frontend/public/icons.svg       — unreferenced asset
+  install_prereqs.bat             — installed Neo4j Desktop (dead dep)
+  dataset_setup.txt               — fully covered by README.md
+  nodeColor(), nodeVal() in App   — defined but never passed to ForceGraph2D
+  Unused C color constants        — card, border, muted, dim, greenDim, blue, pink
+
+--------------------------------------------------------------------------------
+ENVIRONMENT VARIABLES NEEDED
+--------------------------------------------------------------------------------
+backend/.env:
+  GEMINI_API_KEY=<your key>          Required — Gemini SAR generation
+
+frontend/.env:
+  VITE_API_URL=http://localhost:8000  For local dev (or production URL)
+
+--------------------------------------------------------------------------------
+DEPENDENCIES (key)
+--------------------------------------------------------------------------------
+Python: fastapi, uvicorn, pandas, networkx, torch==2.10, torch-geometric==2.7,
+        scikit-learn, google-genai==0.1.0, python-dotenv, kaggle
+
+Node: react@19, react-dom@19, react-force-graph-2d@1.29, vite@8
+
+================================================================================

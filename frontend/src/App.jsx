@@ -1,54 +1,60 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import ForceGraph2D from "react-force-graph-2d"
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, '')
 const API = API_BASE
 const WS = API_BASE.replace("http", "ws") + "/ws/live"
 
 // TD Brand Colors
 const C = {
-  bg: "#0a0f1a",
+  bg:    "#0a0f1a",
   panel: "#111827",
-  card: "#1e293b",
-  border: "#1e293b",
-  text: "#e2e8f0",
-  muted: "#94a3b8",
-  dim: "#475569",
+  text:  "#e2e8f0",
   green: "#00B140",
-  greenDim: "#00B14033",
-  red: "#ef4444",
+  red:   "#ef4444",
   amber: "#f59e0b",
-  blue: "#38bdf8",
-  pink: "#f43f5e",
-  mint: "#10b981",
+  mint:  "#10b981",
 }
 
-export default function App() {
-  // State Variables
-  const [graphData, setGraphData]       = useState({ nodes: [], links: [] })
-  const [alerts, setAlerts]             = useState([])
-  const [feed, setFeed]                 = useState([])
-  const [selectedAccount, setSelectedAccount] = useState(null)
-  const [highlightNodes, setHighlightNodes] = useState(new Set())
+const PROFILE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
-  // AI features
-  const [clusters, setClusters] = useState([])
+export default function App() {
+  // Core state
+  const [graphData, setGraphData]             = useState({ nodes: [], links: [] })
+  const [alerts, setAlerts]                   = useState([])
+  const [feed, setFeed]                       = useState([])
+  const [selectedAccount, setSelectedAccount] = useState(null)
+  const [highlightNodes, setHighlightNodes]   = useState(new Set())
+
+  // AI / investigation state
+  const [clusters, setClusters]           = useState([])
   const [accountProfile, setAccountProfile] = useState(null)
   const [clusterProfile, setClusterProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
-  const [graphLoading, setGraphLoading] = useState(false)
-  const [rightTab, setRightTab] = useState("alerts")
+  const [graphLoading, setGraphLoading]     = useState(true)
+  const [rightTab, setRightTab]             = useState("alerts")
 
-  const wsRef = useRef(null)
-  const graphRef = useRef(null)
+  // New feature state
+  const [searchQuery, setSearchQuery]     = useState("")
+  const [expandedNodes, setExpandedNodes] = useState(new Set())
+  const [caseStatuses, setCaseStatuses]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem("argus_case_statuses") || "{}") }
+    catch { return {} }
+  })
+
+  const wsRef           = useRef(null)
+  const graphRef        = useRef(null)
+  const overviewGraphRef = useRef({ nodes: [], links: [] })
+  const profileCache    = useRef(new Map()) // account_id → { timestamp, data }
 
   const clearInvestigation = useCallback(() => {
-    setGraphData({ nodes: [], links: [] })
+    setGraphData(overviewGraphRef.current)
     setSelectedAccount(null)
     setHighlightNodes(new Set())
     setAccountProfile(null)
     setClusterProfile(null)
     setRightTab("alerts")
+    setExpandedNodes(new Set())
   }, [])
 
   const degreeMap = useMemo(() => {
@@ -68,6 +74,25 @@ export default function App() {
     fetch(`${API}/alerts`, { headers }).then(r => r.json()).then(setAlerts)
     fetch(`${API}/rings`, { headers }).then(r => r.json()).then(d => setClusters(d.rings || []))
 
+    fetch(`${API}/graph/overview`, { headers })
+      .then(r => r.json())
+      .then(d => {
+        const nodes = d.nodes.map(n => ({ ...n, id: n.id }))
+        const links = d.edges.map(e => ({
+          source: e.src, target: e.dst,
+          amount: e.amount, is_fraud: e.is_fraud,
+          timestamp: e.timestamp, tx_type: e.tx_type,
+        }))
+        const g = { nodes, links }
+        overviewGraphRef.current = g
+        setGraphData(g)
+        setGraphLoading(false)
+        setTimeout(() => {
+          if (graphRef.current) graphRef.current.zoomToFit(800, 40)
+        }, 1200)
+      })
+      .catch(() => setGraphLoading(false))
+
     wsRef.current = new WebSocket(WS)
     wsRef.current.onmessage = (e) => {
       const ev = JSON.parse(e.data)
@@ -76,20 +101,25 @@ export default function App() {
     return () => wsRef.current?.close()
   }, [])
 
-  // Account Investigation
+  // Account Investigation — with Gemini response caching
   const investigateAccount = useCallback(async (accountId) => {
     setSelectedAccount(accountId)
     setClusterProfile(null)
     setRightTab("profile")
-
-    // Fetch graph neighborhood + AI profile in parallel
     setGraphLoading(true)
     setProfileLoading(true)
+    setExpandedNodes(new Set())
 
     const headers = { "ngrok-skip-browser-warning": "true" }
+
+    const cached = profileCache.current.get(accountId)
+    const cacheHit = cached && (Date.now() - cached.timestamp < PROFILE_CACHE_TTL)
+
     const [graphRes, profileRes] = await Promise.allSettled([
       fetch(`${API}/graph/${accountId}`, { headers }).then(r => r.json()),
-      fetch(`${API}/profile/${accountId}`, { headers }).then(r => r.json()),
+      cacheHit
+        ? Promise.resolve(cached.data)
+        : fetch(`${API}/profile/${accountId}`, { headers }).then(r => r.json()),
     ])
 
     if (graphRes.status === "fulfilled") {
@@ -109,12 +139,62 @@ export default function App() {
     setGraphLoading(false)
 
     if (profileRes.status === "fulfilled") {
-      setAccountProfile(profileRes.value)
+      const data = profileRes.value
+      if (!cacheHit) profileCache.current.set(accountId, { timestamp: Date.now(), data })
+      setAccountProfile(data)
     } else {
       setAccountProfile({ error: "Failed to load profile." })
     }
     setProfileLoading(false)
   }, [])
+
+  // Multi-hop expand — merge neighbor graph into current view without replacing it
+  const expandAccount = useCallback(async (accountId) => {
+    if (expandedNodes.has(accountId)) return
+    setGraphLoading(true)
+    const headers = { "ngrok-skip-browser-warning": "true" }
+    try {
+      const res = await fetch(`${API}/graph/${accountId}`, { headers })
+      const d = await res.json()
+      setGraphData(prev => {
+        const existingIds = new Set(prev.nodes.map(n => n.id))
+        const newNodes = d.nodes
+          .filter(n => !existingIds.has(n.id))
+          .map(n => ({ ...n }))
+        const existingEdgeKeys = new Set(
+          prev.links.map(l => {
+            const s = typeof l.source === "object" ? l.source.id : l.source
+            const t = typeof l.target === "object" ? l.target.id : l.target
+            return `${s}__${t}`
+          })
+        )
+        const newLinks = d.edges
+          .map(e => ({ source: e.src, target: e.dst, amount: e.amount, is_fraud: e.is_fraud, timestamp: e.timestamp, tx_type: e.tx_type }))
+          .filter(l => !existingEdgeKeys.has(`${l.source}__${l.target}`))
+        return { nodes: [...prev.nodes, ...newNodes], links: [...prev.links, ...newLinks] }
+      })
+      setExpandedNodes(prev => new Set([...prev, accountId]))
+    } catch {}
+    setGraphLoading(false)
+  }, [expandedNodes])
+
+  // Case status management — persisted in localStorage
+  const updateCaseStatus = useCallback((accountId, status) => {
+    setCaseStatuses(prev => {
+      const next = status
+        ? { ...prev, [accountId]: status }
+        : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== accountId))
+      localStorage.setItem("argus_case_statuses", JSON.stringify(next))
+      return next
+    })
+  }, [])
+
+  // Account search
+  const handleSearch = useCallback((e) => {
+    e.preventDefault()
+    const q = searchQuery.trim()
+    if (q) { investigateAccount(q); setSearchQuery("") }
+  }, [searchQuery, investigateAccount])
 
   // Cluster Investigation
   const investigateCluster = useCallback(async (cluster) => {
@@ -122,12 +202,11 @@ export default function App() {
     setAccountProfile(null)
     setRightTab("profile")
     setProfileLoading(true)
+    setExpandedNodes(new Set())
 
-    // Build a combined graph from all accounts in the cluster
     const ids = cluster.accounts.map(a => a.account_id)
     setHighlightNodes(new Set(ids))
 
-    // Fetch cluster profile
     const headers = { "ngrok-skip-browser-warning": "true" }
     try {
       const res = await fetch(`${API}/profile/ring/${cluster.id}`, { headers })
@@ -136,7 +215,6 @@ export default function App() {
     } catch { setClusterProfile({ error: "Failed to load cluster profile." }) }
     setProfileLoading(false)
 
-    // Fetch graph for the first account in the cluster to show something
     setGraphLoading(true)
     try {
       const res = await fetch(`${API}/graph/${ids[0]}`, { headers })
@@ -151,37 +229,17 @@ export default function App() {
       setTimeout(() => {
         if (graphRef.current) graphRef.current.zoomToFit(600, 60)
       }, 500)
-    } catch { }
+    } catch {}
     setGraphLoading(false)
   }, [])
 
-  // Graph Node Click
   const handleNodeClick = useCallback((node) => {
     investigateAccount(node.id)
   }, [investigateAccount])
 
-  // Graph Rendering (size scales with transaction count; selected = white)
-  const nodeColor = (node) => {
-    if (highlightNodes.has(node.id)) return "#ffffff"
-    if (node.risk_score > 0.7) return C.red
-    if (node.risk_score > 0.4) return C.amber
-    return C.mint
-  }
-
-  const nodeVal = (node) => {
-    const degree = degreeMap.get(node.id) || 0
-    const base = highlightNodes.has(node.id) ? 14 : node.risk_score > 0.7 ? 8 : 5
-    const fromDegree = Math.min(degree * 0.5, 14)
-    return base + fromDegree
-  }
-
-  const linkColor = (l) => {
-    return l.is_fraud ? C.red + "88" : C.text + "44"
-  }
-
+  const linkColor = (l) => l.is_fraud ? C.red + "88" : C.text + "44"
   const linkWidth = (l) => l.is_fraud ? 2.5 : 1
 
-  // ── Custom Node Renderer (radius scales with transaction count; selected = white) ─
   const nodeCanvasObject = useCallback((node, ctx, globalScale) => {
     const risk = node.risk_score ?? 0
     const pct = (risk * 100).toFixed(0)
@@ -190,13 +248,11 @@ export default function App() {
     const baseRadius = isHighlighted ? 9 : risk > 0.7 ? 7 : 5
     const radius = baseRadius + Math.min(degree * 0.4, 12)
 
-    // Node color
     let color = C.mint
     if (isHighlighted) color = "#ffffff"
     else if (risk > 0.7) color = C.red
     else if (risk > 0.4) color = C.amber
 
-    // Outer glow for high-risk / highlighted nodes
     if (risk > 0.7 || isHighlighted) {
       ctx.beginPath()
       ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI)
@@ -209,25 +265,21 @@ export default function App() {
       ctx.stroke()
     }
 
-    // Main circle
     ctx.beginPath()
     ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI)
     ctx.fillStyle = color
     ctx.fill()
 
-    // Inner highlight (subtle shine)
     ctx.beginPath()
     ctx.arc(node.x, node.y, radius * 0.55, 0, 2 * Math.PI)
     ctx.fillStyle = "rgba(255,255,255,0.12)"
     ctx.fill()
 
-    // Risk % label below the node
     const labelSize = Math.max(9 / globalScale, 2.2)
     ctx.font = `600 ${labelSize}px "Inter", "Segoe UI", system-ui, sans-serif`
     ctx.textAlign = "center"
     ctx.textBaseline = "top"
 
-    // Badge background
     const labelY = node.y + radius + 2
     const textWidth = ctx.measureText(`${pct}%`).width
     const padX = labelSize * 0.4
@@ -245,7 +297,6 @@ export default function App() {
     ctx.lineWidth = 0.5
     ctx.stroke()
 
-    // Text
     ctx.fillStyle = color
     ctx.fillText(`${pct}%`, node.x, labelY)
   }, [highlightNodes, degreeMap])
@@ -265,8 +316,8 @@ export default function App() {
     ? (accountProfile?.risk_score ?? graphData.nodes.find((n) => n.id === selectedAccount)?.risk_score ?? 0)
     : 0
   const showSarButton = selectedAccount && selectedNodeRisk > 0.4
+  const isExpanded = selectedAccount && expandedNodes.has(selectedAccount)
 
-  // Render (outer layout: B&W dreamy; graph: colors unchanged)
   return (
     <div className="app">
       <aside className="panel panel-left">
@@ -314,34 +365,47 @@ export default function App() {
 
         {hasGraph && (
           <div className="graph-info-bar">
-            {selectedAccount && (
+            {selectedAccount ? (
               <>
                 <span style={{ fontWeight: 600, color: "var(--layout-text)" }}>Investigating</span>
                 <span className="mono" style={{ color: "var(--layout-text)" }}>{selectedAccount}</span>
               </>
-            )}
+            ) : !clusterProfile ? (
+              <span style={{ color: "var(--layout-text-tertiary)" }}>Overview — top fraud transactions</span>
+            ) : null}
             <span>{graphData.nodes.length} accounts</span>
             <span>{graphData.links.length} transactions</span>
+            {selectedAccount && (
+              <button
+                type="button"
+                className={`graph-info-bar-expand ${isExpanded ? "expanded" : ""}`}
+                onClick={() => expandAccount(selectedAccount)}
+                disabled={isExpanded}
+                title={isExpanded ? "Network already expanded" : "Merge this account's neighbors into the current graph"}
+              >
+                {isExpanded ? "Expanded" : "Expand network"}
+              </button>
+            )}
             {showSarButton && (
               <button
                 type="button"
                 className="graph-info-bar-sar"
                 onClick={() => setRightTab("profile")}
                 title="View SAR report for this account"
-                aria-label="Open SAR report"
               >
                 SAR report
               </button>
             )}
-            <button
-              type="button"
-              className="graph-info-bar-close"
-              onClick={clearInvestigation}
-              title="Clear and return to overview"
-              aria-label="Close investigation"
-            >
-              Close
-            </button>
+            {(selectedAccount || clusterProfile) && (
+              <button
+                type="button"
+                className="graph-info-bar-close"
+                onClick={clearInvestigation}
+                title="Return to overview"
+              >
+                Close
+              </button>
+            )}
           </div>
         )}
 
@@ -359,7 +423,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Graph */}
         {hasGraph && (
           <ForceGraph2D
             ref={graphRef}
@@ -380,6 +443,19 @@ export default function App() {
       </main>
 
       <aside className="panel panel-right">
+        {/* Account search */}
+        <form onSubmit={handleSearch} className="search-form">
+          <input
+            type="text"
+            placeholder="Search account ID…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="search-input"
+            spellCheck={false}
+          />
+          <button type="submit" className="search-button">Go</button>
+        </form>
+
         <div className="tabs">
           {[
             ["alerts", "Alerts"],
@@ -391,6 +467,7 @@ export default function App() {
             </button>
           ))}
         </div>
+
         <div className="panel-body">
           {rightTab === "alerts" && (
             <>
@@ -404,10 +481,19 @@ export default function App() {
                   className={`card card-clickable ${selectedAccount === a.account_id ? "selected" : ""}`}
                 >
                   <div className="row">
-                    <span className="mono" style={{ fontSize: 11, color: "var(--layout-text-secondary)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--layout-text-secondary)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {a.account_id}
                     </span>
-                    <span style={{ fontWeight: 600, color: a.risk_score > 0.85 ? C.red : C.amber }}>{(a.risk_score * 100).toFixed(0)}%</span>
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      {caseStatuses[a.account_id] && (
+                        <span className={`status-badge status-${caseStatuses[a.account_id].toLowerCase()}`}>
+                          {caseStatuses[a.account_id]}
+                        </span>
+                      )}
+                      <span style={{ fontWeight: 600, color: a.risk_score > 0.85 ? C.red : C.amber }}>
+                        {(a.risk_score * 100).toFixed(0)}%
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -444,7 +530,14 @@ export default function App() {
           {rightTab === "profile" && (
             <>
               {profileLoading && <div className="sidebar-empty">Generating report…</div>}
-              {!profileLoading && accountProfile && <ProfileCard profile={accountProfile} type="account" />}
+              {!profileLoading && accountProfile && (
+                <ProfileCard
+                  profile={accountProfile}
+                  type="account"
+                  caseStatus={caseStatuses[accountProfile.account_id]}
+                  onStatusChange={updateCaseStatus}
+                />
+              )}
               {!profileLoading && clusterProfile && <ProfileCard profile={clusterProfile} type="cluster" />}
               {!profileLoading && !accountProfile && !clusterProfile && (
                 <div className="sidebar-empty">Select an account or cluster to view the investigation report.</div>
@@ -458,7 +551,7 @@ export default function App() {
 }
 
 
-function ProfileCard({ profile, type }) {
+function ProfileCard({ profile, type, caseStatus, onStatusChange }) {
   const isCluster = type === "cluster"
   const title = isCluster ? profile.ring_id : profile.account_id
   const profileText = profile.profile || ""
@@ -475,16 +568,24 @@ function ProfileCard({ profile, type }) {
   }
   const severity = (sections["SEVERITY"] || "").trim()
 
+  const handleExport = () => window.print()
+
   return (
-    <div>
+    <div className="print-profile">
       <div className="profile-card">
         <div className="profile-card-header">
           <div>
             <div className="profile-card-title">{isCluster ? "Cluster" : "Account"}</div>
             <div className="profile-card-value">{title}</div>
           </div>
-          <span className="profile-badge">{severity || "—"}</span>
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+            <span className="profile-badge">{severity || "—"}</span>
+            <button type="button" onClick={handleExport} className="export-button" title="Print / export this report">
+              Export
+            </button>
+          </div>
         </div>
+
         {!isCluster && profile.risk_score !== undefined && (
           <div className="profile-body-muted" style={{ display: "flex", gap: "var(--layout-s4)", marginTop: "var(--layout-s2)" }}>
             <span>Risk <strong style={{ color: profile.risk_score > 0.7 ? C.red : C.mint }}>{(profile.risk_score * 100).toFixed(1)}%</strong></span>
@@ -502,6 +603,26 @@ function ProfileCard({ profile, type }) {
           <div className="profile-body-muted" style={{ display: "flex", gap: "var(--layout-s4)", marginTop: "var(--layout-s2)" }}>
             <span>Accounts <strong style={{ color: "var(--layout-text)" }}>{profile.accounts?.length}</strong></span>
             <span>Volume <strong style={{ color: "var(--layout-text)" }}>${profile.total_amount?.toLocaleString()}</strong></span>
+          </div>
+        )}
+
+        {/* Case status buttons — account investigations only */}
+        {!isCluster && onStatusChange && (
+          <div className="case-status-row">
+            {[
+              { key: "CLEARED",    label: "Clear",     cls: "cleared" },
+              { key: "ESCALATED",  label: "Escalate",  cls: "escalated" },
+              { key: "FLAGGED",    label: "Flag",      cls: "flagged" },
+            ].map(({ key, label, cls }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onStatusChange(profile.account_id, caseStatus === key ? null : key)}
+                className={`case-btn case-btn-${cls} ${caseStatus === key ? "active" : ""}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         )}
       </div>

@@ -1,0 +1,193 @@
+================================================================================
+ARGUS — Session Log
+================================================================================
+Format: [DATE] [WHO/BRANCH] — What was done
+================================================================================
+
+--------------------------------------------------------------------------------
+SESSION 0 — Hackathon (13–15 March 2026) — Initial build
+--------------------------------------------------------------------------------
+Branch: main / various feature branches (PRs #1–#15)
+
+  INFRASTRUCTURE
+  - Scaffolded project: backend/ (api, data, model, graph) + frontend/
+  - Added .gitignore, raw_data gitignore, .env.example
+  - Added Kaggle downloader script (generate_data.py) with token setup
+  - Added setup.bat / setup.sh (Python venv + npm install)
+  - Added run.bat / run.sh (launch both servers)
+  - Added install_prereqs.bat (Python, Node, Neo4j Desktop installers — later removed)
+
+  MODEL
+  - Built PyG graph from PaySim CSV: node features, edge features, fraud labels
+    (backend/model/dataset.py + backend/data/graph_builder.py — duplicate, later removed)
+  - Implemented FraudGNN: 3-layer GraphSAGE with SAGEConv (backend/model/gnn.py)
+  - Training script: 200 epochs, class-weighted NLL loss, 80/20 split
+    (backend/model/train.py) — uses sample_size=100000 for speed
+  - Evaluation metrics: Precision, Recall, F1 on test set
+  - Exports fraud_gnn.pt (weights) + scores.json (per-node probabilities)
+
+  BACKEND
+  - Initial FastAPI setup with Neo4j integration (later ripped out)
+  - Rewrote backend to remove Neo4j: all queries run against Pandas DF in memory
+    (commit 06817709)
+  - Endpoints: /alerts, /accounts/high, /accounts/medium, /accounts/low,
+    /graph/{account_id}, /profile/{account_id}, /rings, /profile/ring/{ring_id}
+  - Ring detection: NetworkX connected components on fraud edges
+  - AI SAR generation: Google Gemini 2.5 Flash Lite, structured prompt
+  - WebSocket /ws/live: streams real PaySim rows with GNN risk scores (2s interval)
+  - Timestamps: PaySim step → readable date string via step_to_timestamp()
+  - Live transactions: switched from random to real dataset rows (commit dd6f479e)
+
+  FRONTEND
+  - React 19 + Vite 8 dashboard, 3-panel layout
+  - Force-directed graph: react-force-graph-2d, colored by risk tier
+  - Custom canvas node renderer: glow, risk % badge, size by degree
+  - Alert cards (top 15), Clusters tab, ProfileCard SAR viewer
+  - Branding updated: FraudLink → ARGUS (commit 38b2ad98)
+  - ngrok bypass headers added to all fetch calls
+
+  DOCUMENTATION
+  - README.md: setup guide, API reference, tech stack
+  - HackathonWriteUp.md: project description and submission narrative
+
+--------------------------------------------------------------------------------
+SESSION 1 — 2026-05-28 — Project audit & documentation
+--------------------------------------------------------------------------------
+Branch: Shubham
+
+  Code read: backend/api/main.py, all model files, frontend/src/App.jsx,
+  index.css, package.json, requirements.txt, README.md, HackathonWriteUp.md,
+  .env.example, backend/.env, docker-compose.yml, generate_data.py,
+  graph_builder.py, neo4j_loader.py
+
+  CREATED
+  - index.txt: full project map, API reference, what's done/missing, bug list,
+    prioritized TODO roadmap
+  - session_log.txt (this file)
+
+  KEY FINDINGS DOCUMENTED
+  - docker-compose.yml is empty
+  - App.css is Vite default boilerplate (not used)
+  - Neo4j is entirely dead code (installed but never wired into API)
+  - GEMINI_API_KEY in plaintext in backend/.env (gitignored but risky)
+  - VITE_API_URL in frontend/.env pointed to dead hackathon ngrok URL
+  - scores.json covers only ~50k sampled accounts, not 9M as README claimed
+  - FastAPI route ordering bug: "ring" matched as account_id if route order wrong
+  - backend/data/graph_builder.py is an exact duplicate of model/dataset.py
+
+  BACKEND ADDITION (commit 53b3ccdc)
+  - Added GET /graph/overview endpoint: pre-computed graph of top 400 fraud
+    transactions by amount, built at startup from DF[isFraud==1].nlargest(400)
+  - Overview graph cached in OVERVIEW_GRAPH dict; served instantly on load
+
+  FRONTEND ADDITION (commit 53b3ccdc)
+  - Dashboard now loads overview graph on startup (replaces empty state)
+  - Shows "Overview — top fraud transactions" label in graph info bar
+  - clearInvestigation() returns to overview graph
+  - Gemini prompt tweaked: added timestamp accuracy instruction (commit 432894cd)
+
+--------------------------------------------------------------------------------
+SESSION 2 — 2026-05-29 — Implement all high-priority TODOs
+--------------------------------------------------------------------------------
+Branch: Shubham
+
+  BACKEND
+  - Bug fix: moved /profile/ring/{ring_id} route definition BEFORE
+    /profile/{account_id} in main.py to prevent FastAPI matching "ring"
+    as an account_id (fragile routing, now correct)
+
+  FRONTEND — New features (App.jsx + index.css)
+  - Account search: search bar at top of right panel; submits to
+    investigateAccount(), identical behavior to clicking an alert card
+  - Gemini SAR caching: profileCache useRef(new Map()), stores { timestamp, data }
+    per account_id; 5-minute TTL; cache hit skips the Gemini API call entirely
+  - Multi-hop graph traversal: expandAccount() fetches the selected account's
+    1-hop neighborhood and MERGES it into current graphData (deduplicates nodes
+    by id, deduplicates edges by src__dst key). "Expand network" button in graph
+    info bar; shows "Expanded" and disables after first use per account
+  - Case status tagging: ProfileCard now has Clear / Escalate / Flag buttons;
+    status stored in localStorage keyed by account_id; alert cards show
+    color-coded status badges (green=CLEARED, amber=ESCALATED, red=FLAGGED)
+  - SAR export: "Export" button in ProfileCard header triggers window.print();
+    @media print CSS hides panels/graph/controls and shows only the report
+    with an "ARGUS — Draft SAR · Confidential" printed header
+
+  CLEANUP (App.css)
+  - Cleared App.css of Vite boilerplate (hero, ticks, counter classes) —
+    actual CSS has always been in index.css
+
+  INFRASTRUCTURE
+  - Wrote docker-compose.yml: backend (Python 3.11, port 8000) and frontend
+    (Node 20, port 5173) services; volumes for raw_data/ and model weights;
+    env_file injection for GEMINI_API_KEY
+  - Created backend/Dockerfile and frontend/Dockerfile
+
+  DEAD CODE REMOVED
+  - Deleted backend/data/graph_builder.py (exact duplicate of model/dataset.py)
+  - Deleted backend/graph/neo4j_loader.py (never called by API)
+  - Deleted client.py at root (queried non-existent /predict endpoint)
+  - Removed neo4j==6.1.0 from requirements.txt
+
+  Updated index.txt to reflect all completed items.
+
+--------------------------------------------------------------------------------
+SESSION 3 — 2026-05-29 — Code cleanup pass
+--------------------------------------------------------------------------------
+Branch: Shubham
+
+  FILES DELETED
+  - backend/model/package-lock.json  stray Node.js lockfile in Python directory
+  - frontend/public/icons.svg        SVG asset not referenced anywhere
+  - install_prereqs.bat              downloaded Neo4j Desktop (now dead dep)
+  - dataset_setup.txt                fully duplicated by README.md Setup section
+
+  CODE CLEANED
+  - App.jsx: removed dead nodeColor() function (defined, never passed to
+    ForceGraph2D — nodeCanvasObject handles all rendering)
+  - App.jsx: removed dead nodeVal() function (defined, never passed to
+    ForceGraph2D as a prop)
+  - App.jsx: removed 7 unused entries from the C color map: card, border,
+    muted, dim, greenDim, blue, pink
+
+  CONFIG FIXED
+  - frontend/.env: removed dead NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD vars;
+    removed GEMINI_API_KEY (wrong file — Vite runs in the browser; the key
+    belongs only in backend/.env)
+  - .env.example: fixed // comment syntax (not valid in .env) → #;
+    removed dead Neo4j vars; now shows only GEMINI_API_KEY
+  - backend/Dockerfile: fixed wrong uvicorn module path
+    api/main.py:app → api.main:app (uvicorn expects dot-separated Python module)
+  - run.sh / run.bat: removed "Make sure Neo4j Desktop is open" prompt
+    (Neo4j is fully removed from the project)
+  - .gitignore: added .idea/ entry (JetBrains IDE files were being tracked)
+
+  DOCS UPDATED
+  - README.md: removed neo4j_loader.py from project structure (file deleted);
+    fixed "9M accounts" claim (actual coverage is ~50k from 100k sample);
+    added all new features to the Features section; added Docker section;
+    removed stale local network / ngrok section
+  - index.txt: full rewrite to reflect current project state (done/missing/bugs)
+  - session_log.txt: this file updated with all three sessions
+
+================================================================================
+REMAINING OPEN ITEMS (as of 2026-05-29)
+================================================================================
+See index.txt for full details. Short list:
+
+  HIGH VALUE
+  [ ] Fix full-dataset scoring (remove sample_size cap in train.py + dataset.py,
+      re-run training, update README note)
+  [ ] "Why flagged?" explainability panel in ProfileCard (2nd Gemini call or
+      augmented prompt, 3-bullet KEY RISK INDICATORS)
+  [ ] Transaction timeline chart (bar/sparkline per account inside ProfileCard)
+
+  INFRASTRUCTURE
+  [ ] Cloud deployment (frontend → Vercel, backend → Railway/Render)
+  [ ] Authentication on the API (currently CORS allow_origins=["*"])
+  [ ] Rate limiting on /profile/* Gemini endpoints
+
+  MEDIUM
+  [ ] Graph filters (tx type, amount range, risk tier — client-side)
+  [ ] Account pagination (/accounts/high and /accounts/medium → ?page=N&limit=50)
+
+================================================================================
